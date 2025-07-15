@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Доступ запрещен - HR Admin Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .access-denied-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            overflow: hidden;
+            width: 100%;
+            max-width: 800px;
+            margin: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .error-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            animation: shake 0.5s ease-in-out;
+        }
+        
+        .error-code {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+        
+        .error-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+        
+        .error-subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            line-height: 1.5;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .message-section {
+            margin-bottom: 35px;
+        }
+        
+        .message-title {
+            color: #2C3E50;
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .message-text {
+            color: #6B7280;
+            font-size: 1rem;
+            line-height: 1.6;
+            background: #F9FAFB;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #EF4444;
+        }
+        
+        .roles-section {
+            margin-bottom: 35px;
+        }
+        
+        .roles-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .role-card {
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 10px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .role-card.allowed {
+            border-color: #10B981;
+            background: #F0FDF4;
+        }
+        
+        .role-card.current {
+            border-color: #1DB584;
+            background: #ECFDF5;
+            box-shadow: 0 0 0 3px rgba(29, 181, 132, 0.1);
+        }
+        
+        .role-name {
+            font-weight: 600;
+            color: #2C3E50;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .role-description {
+            color: #6B7280;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        
+        .role-status {
+            margin-top: 10px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .role-status.allowed {
+            color: #10B981;
+        }
+        
+        .role-status.denied {
+            color: #EF4444;
+        }
+        
+        .role-status.current {
+            color: #1DB584;
+        }
+        
+        .actions-section {
+            text-align: center;
+        }
+        
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: #1DB584;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #159A73;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(29, 181, 132, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #F3F4F6;
+            color: #6B7280;
+            border: 1px solid #D1D5DB;
+        }
+        
+        .btn-secondary:hover {
+            background: #E5E7EB;
+        }
+        
+        .btn-logout {
+            background: #FEF2F2;
+            color: #DC2626;
+            border: 1px solid #FECACA;
+        }
+        
+        .btn-logout:hover {
+            background: #FEE2E2;
+        }
+        
+        .help-section {
+            background: #F0F9FF;
+            border: 1px solid #BAE6FD;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 25px;
+        }
+        
+        .help-title {
+            color: #1E40AF;
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .help-text {
+            color: #3730A3;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        
+        .contact-info {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #DBEAFE;
+        }
+        
+        .contact-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: #1E40AF;
+        }
+        
+        /* User Info */
+        .user-info-bar {
+            background: #F8FAFC;
+            border-bottom: 1px solid #E2E8F0;
+            padding: 15px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .current-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: #1DB584;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        
+        .user-details {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .user-name {
+            font-weight: 600;
+            color: #2C3E50;
+            font-size: 0.95rem;
+        }
+        
+        .user-role {
+            color: #6B7280;
+            font-size: 0.8rem;
+        }
+        
+        .logo-small {
+            color: #1DB584;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+        
+        /* Animations */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .access-denied-container {
+                margin: 10px;
+            }
+            
+            .header {
+                padding: 30px 20px;
+            }
+            
+            .content {
+                padding: 30px 20px;
+            }
+            
+            .user-info-bar {
+                padding: 15px 20px;
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+            }
+            
+            .roles-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .actions-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .error-title {
+                font-size: 1.5rem;
+            }
+        }
+        
+        /* Theme colors for different roles */
+        .role-super-admin { border-left: 4px solid #DC2626; }
+        .role-hr-head { border-left: 4px solid #2563EB; }
+        .role-hr-admin { border-left: 4px solid #059669; }
+        .role-head-admin { border-left: 4px solid #7C3AED; }
+    </style>
+</head>
+<body>
+    <div class="access-denied-container fade-in">
+        <!-- User Info Bar -->
+        <div class="user-info-bar">
+            <div class="current-user">
+                <div class="user-avatar">
+                    {{ user.name[0] if user and user.name else 'U' }}
+                </div>
+                <div class="user-details">
+                    <div class="user-name">{{ user.name if user else 'Пользователь' }}</div>
+                    <div class="user-role">{{ user_role_name if user_role_name else 'Неизвестная роль' }}</div>
+                </div>
+            </div>
+            <div class="logo-small">🏦 HR Admin Panel</div>
+        </div>
+        
+        <!-- Error Header -->
+        <div class="header">
+            <div class="error-icon">🚫</div>
+            <div class="error-code">Ошибка 403</div>
+            <h1 class="error-title">Доступ запрещен</h1>
+            <p class="error-subtitle">У вас недостаточно прав для доступа к этой странице</p>
+        </div>
+        
+        <!-- Content -->
+        <div class="content">
+            <!-- Error Message -->
+            <div class="message-section">
+                <h2 class="message-title">
+                    ⚠️ Причина ограничения доступа
+                </h2>
+                <div class="message-text">
+                    {{ message if message else 'Для доступа к этой функции требуются дополнительные права доступа.' }}
+                </div>
+            </div>
+            
+            <!-- Roles Information -->
+            <div class="roles-section">
+                <h2 class="message-title">
+                    👥 Информация о ролях системы
+                </h2>
+                
+                <div class="roles-grid">
+                    <div class="role-card role-super-admin {% if user and user.role == 'super_admin' %}current{% elif 'super_admin' in (allowed_roles or []) %}allowed{% endif %}">
+                        <div class="role-name">
+                            🔴 Супер Администратор
+                        </div>
+                        <div class="role-description">
+                            Полный доступ ко всем функциям системы, включая просмотр вопросов и управление пользователями
+                        </div>
+                        <div class="role-status {% if user and user.role == 'super_admin' %}current{% elif 'super_admin' in (allowed_roles or []) %}allowed{% else %}denied{% endif %}">
+                            {% if user and user.role == 'super_admin' %}
+                                ✅ Ваша текущая роль
+                            {% elif 'super_admin' in (allowed_roles or []) %}
+                                ✅ Доступ разрешен
+                            {% else %}
+                                ❌ Доступ ограничен
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="role-card role-hr-head {% if user and user.role == 'hr_head_admin' %}current{% elif 'hr_head_admin' in (allowed_roles or []) %}allowed{% endif %}">
+                        <div class="role-name">
+                            🔵 HR Директор
+                        </div>
+                        <div class="role-description">
+                            Создание новых профессий, управление HR процессами, просмотр статистики
+                        </div>
+                        <div class="role-status {% if user and user.role == 'hr_head_admin' %}current{% elif 'hr_head_admin' in (allowed_roles or []) %}allowed{% else %}denied{% endif %}">
+                            {% if user and user.role == 'hr_head_admin' %}
+                                ✅ Ваша текущая роль
+                            {% elif 'hr_head_admin' in (allowed_roles or []) %}
+                                ✅ Доступ разрешен
+                            {% else %}
+                                ❌ Доступ ограничен
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="role-card role-head-admin {% if user and user.role == 'head_admin' %}current{% elif 'head_admin' in (allowed_roles or []) %}allowed{% endif %}">
+                        <div class="role-name">
+                            🟣 Начальник отдела
+                        </div>
+                        <div class="role-description">
+                            Утверждение профессий своего отдела, корректировка тегов, возврат на доработку
+                        </div>
+                        <div class="role-status {% if user and user.role == 'head_admin' %}current{% elif 'head_admin' in (allowed_roles or []) %}allowed{% else %}denied{% endif %}">
+                            {% if user and user.role == 'head_admin' %}
+                                ✅ Ваша текущая роль
+                            {% elif 'head_admin' in (allowed_roles or []) %}
+                                ✅ Доступ разрешен
+                            {% else %}
+                                ❌ Доступ ограничен
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="role-card role-hr-admin {% if user and user.role == 'hr_admin' %}current{% elif 'hr_admin' in (allowed_roles or []) %}allowed{% endif %}">
+                        <div class="role-name">
+                            🟢 HR Специалист
+                        </div>
+                        <div class="role-description">
+                            Просмотр профессий и статистики, помощь в HR процессах
+                        </div>
+                        <div class="role-status {% if user and user.role == 'hr_admin' %}current{% elif 'hr_admin' in (allowed_roles or []) %}allowed{% else %}denied{% endif %}">
+                            {% if user and user.role == 'hr_admin' %}
+                                ✅ Ваша текущая роль
+                            {% elif 'hr_admin' in (allowed_roles or []) %}
+                                ✅ Доступ разрешен
+                            {% else %}
+                                ❌ Доступ ограничен
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Actions -->
+            <div class="actions-section">
+                <div class="actions-grid">
+                    <a href="/dashboard" class="btn btn-primary">
+                        🏠 Вернуться на главную
+                    </a>
+                    
+                    <button class="btn btn-secondary" onclick="history.back()">
+                        ⬅️ Назад
+                    </button>
+                    
+                    <a href="/logout" class="btn btn-logout">
+                        🚪 Выйти из системы
+                    </a>
+                </div>
+                
+                <!-- Help Section -->
+                <div class="help-section">
+                    <h3 class="help-title">
+                        💡 Нужны дополнительные права?
+                    </h3>
+                    <p class="help-text">
+                        Если вам необходим доступ к этой функции для выполнения рабочих задач, 
+                        обратитесь к администратору системы или вашему руководителю.
+                    </p>
+                    
+                    <div class="contact-info">
+                        <div class="contact-item">
+                            <span>📧</span>
+                            <span>Техподдержка: support@halykbank.kz</span>
+                        </div>
+                        <div class="contact-item">
+                            <span>👨‍💼</span>
+                            <span>Супер Админ: JanaydarK@halykbank.kz</span>
+                        </div>
+                        <div class="contact-item">
+                            <span>👩‍💼</span>
+                            <span>HR Директор: DzhamilyaBa@halykbank.kz</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Анимация загрузки
+        document.addEventListener('DOMContentLoaded', function() {
+            // Добавляем эффект печати для заголовка
+            const title = document.querySelector('.error-title');
+            const originalText = title.textContent;
+            title.textContent = '';
+            
+            let i = 0;
+            const typeWriter = () => {
+                if (i < originalText.length) {
+                    title.textContent += originalText.charAt(i);
+                    i++;
+                    setTimeout(typeWriter, 100);
+                }
+            };
+            
+            setTimeout(typeWriter, 500);
+            
+            // Анимация появления карточек ролей
+            const roleCards = document.querySelectorAll('.role-card');
+            roleCards.forEach((card, index) => {
+                card.style.opacity = '0';
+                card.style.transform = 'translateY(20px)';
+                
+                setTimeout(() => {
+                    card.style.transition = 'all 0.5s ease';
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, 1000 + (index * 200));
+            });
+        });
+        
+        // Добавляем интерактивность кнопкам
+        document.querySelectorAll('.btn').forEach(btn => {
+            btn.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-2px) scale(1.02)';
+            });
+            
+            btn.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0) scale(1)';
+            });
+        });
+        
+        // Подсветка текущей роли
+        const currentRoleCard = document.querySelector('.role-card.current');
+        if (currentRoleCard) {
+            // Добавляем мягкое свечение для текущей роли
+            setInterval(() => {
+                currentRoleCard.style.boxShadow = currentRoleCard.style.boxShadow === 'none' ? 
+                    '0 0 20px rgba(29, 181, 132, 0.3)' : 'none';
+            }, 2000);
+        }
+        
+        // Логирование попытки доступа (для аналитики)
+        console.log('Access denied:', {
+            user: '{{ user.email if user else "unknown" }}',
+            role: '{{ user.role if user else "unknown" }}',
+            attempted_page: window.location.href,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Предупреждение для разработчиков
+        if (window.location.hostname === 'localhost') {
+            console.warn('🚫 Access Denied Page - Development Mode');
+            console.info('👤 Current user role:', '{{ user.role if user else "none" }}');
+            console.info('✅ Allowed roles:', {{ allowed_roles | tojson if allowed_roles else '[]' }});
+        }
+    </script>
+</body>
+</html>

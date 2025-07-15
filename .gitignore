@@ -1,0 +1,22 @@
+# Секретные данные
+.env
+config_local.py
+
+# API ключи
+*api_key*
+
+# Данные и загрузки
+data/
+uploads/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# Логи
+*.log

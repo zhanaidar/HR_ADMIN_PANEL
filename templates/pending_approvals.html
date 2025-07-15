@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Утверждение профессий - HR Admin Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: #f8fafc; 
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background: white;
+            border-bottom: 1px solid #E5E7EB;
+            padding: 15px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #1DB584;
+        }
+        
+        .breadcrumb {
+            color: #6B7280;
+            font-size: 0.9rem;
+        }
+        
+        .breadcrumb a {
+            color: #1DB584;
+            text-decoration: none;
+        }
+        
+        .user-info {
+            font-size: 0.9rem;
+            color: #6B7280;
+        }
+        
+        /* Main Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .page-header {
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .page-title {
+            color: #2C3E50;
+            font-size: 2rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .pending-count {
+            background: #EF4444;
+            color: white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        
+        .filters {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        
+        .filter-select {
+            padding: 8px 12px;
+            border: 1px solid #D1D5DB;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+        
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+        
+        .empty-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2C3E50;
+            margin-bottom: 10px;
+        }
+        
+        .empty-text {
+            color: #6B7280;
+            font-size: 1.1rem;
+        }
+        
+        /* Profession Cards */
+        .professions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 25px;
+        }
+        
+        .profession-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .profession-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+        }
+        
+        .profession-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #1DB584, #159A73);
+        }
+        
+        .profession-header {
+            margin-bottom: 20px;
+        }
+        
+        .profession-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #2C3E50;
+            margin-bottom: 8px;
+            line-height: 1.3;
+        }
+        
+        .profession-subtitle {
+            color: #6B7280;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+        
+        .profession-meta {
+            display: flex;
+            gap: 15px;
+            font-size: 0.8rem;
+            color: #9CA3AF;
+        }
+        
+        .profession-details {
+            margin-bottom: 20px;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        
+        .detail-label {
+            color: #6B7280;
+            font-weight: 500;
+        }
+        
+        .detail-value {
+            color: #2C3E50;
+            font-weight: 600;
+        }
+        
+        .tags-preview {
+            margin-bottom: 20px;
+        }
+        
+        .tags-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #2C3E50;
+            margin-bottom: 10px;
+        }
+        
+        .tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        
+        .tag {
+            background: #F0FDF4;
+            color: #166534;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            border: 1px solid #BBF7D0;
+        }
+        
+        .tag.high-priority {
+            background: #FEF2F2;
+            color: #991B1B;
+            border-color: #FECACA;
+        }
+        
+        .tag.medium-priority {
+            background: #FFFBEB;
+            color: #92400E;
+            border-color: #FED7AA;
+        }
+        
+        .profession-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: #1DB584;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #159A73;
+        }
+        
+        .btn-secondary {
+            background: #F3F4F6;
+            color: #6B7280;
+        }
+        
+        .btn-secondary:hover {
+            background: #E5E7EB;
+        }
+        
+        .btn-danger {
+            background: #FEF2F2;
+            color: #DC2626;
+            border: 1px solid #FECACA;
+        }
+        
+        .btn-danger:hover {
+            background: #FEE2E2;
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 15px;
+            padding: 0;
+            max-width: 900px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            animation: slideInUp 0.3s ease;
+        }
+        
+        .modal-header {
+            background: #1DB584;
+            color: white;
+            padding: 20px 30px;
+            border-radius: 15px 15px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 5px;
+        }
+        
+        .modal-body {
+            padding: 30px;
+        }
+        
+        .modal-section {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #E5E7EB;
+        }
+        
+        .modal-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+        
+        .modal-section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #2C3E50;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .tags-editor {
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        .tag-editor-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #E5E7EB;
+        }
+        
+        .tag-name {
+            flex: 1;
+            font-weight: 500;
+        }
+        
+        .tag-weight-input {
+            width: 80px;
+            padding: 5px 8px;
+            border: 1px solid #D1D5DB;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .tag-remove {
+            background: #FEF2F2;
+            color: #DC2626;
+            border: 1px solid #FECACA;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        
+        .ai-analysis {
+            background: #F0F9FF;
+            border: 1px solid #BAE6FD;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        .analysis-item {
+            background: white;
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border-left: 4px solid #3B82F6;
+        }
+        
+        .analysis-item.warning {
+            border-left-color: #F59E0B;
+            background: #FFFBEB;
+        }
+        
+        .analysis-item.error {
+            border-left-color: #EF4444;
+            background: #FEF2F2;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-label {
+            display: block;
+            font-weight: 600;
+            color: #2C3E50;
+            margin-bottom: 8px;
+        }
+        
+        .form-textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #D1D5DB;
+            border-radius: 6px;
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            padding-top: 20px;
+            border-top: 1px solid #E5E7EB;
+        }
+        
+        /* ИИ Чат в модалке */
+        .ai-chat {
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .ai-chat-header {
+            background: #1DB584;
+            color: white;
+            padding: 12px 15px;
+            border-radius: 8px 8px 0 0;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .ai-chat-messages {
+            padding: 15px;
+            min-height: 150px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .ai-message {
+            background: #E2E8F0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        
+        .user-message {
+            background: #1DB584;
+            color: white;
+            text-align: right;
+        }
+        
+        .ai-chat-input {
+            display: flex;
+            gap: 8px;
+            padding: 12px 15px;
+            border-top: 1px solid #E2E8F0;
+        }
+        
+        .ai-chat-input input {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #D1D5DB;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        
+        .ai-chat-input button {
+            padding: 6px 12px;
+            background: #1DB584;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .professions-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .page-header {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }
+            
+            .profession-actions {
+                flex-direction: column;
+            }
+            
+            .modal-content {
+                width: 95%;
+                margin: 20px;
+            }
+            
+            .modal-body {
+                padding: 20px;
+            }
+        }
+        
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideInUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">🏦 HR Admin Panel</div>
+            <div class="breadcrumb">
+                <a href="/dashboard">Дашборд</a> / Утверждение профессий
+            </div>
+            <div class="user-info">{{ user.name }} ({{ user_role_name }})</div>
+        </div>
+    </header>
+    
+    <!-- Main Content -->
+    <div class="container">
+        <!-- Page Header -->
+        <div class="page-header fade-in">
+            <h1 class="page-title">
+                ✅ Утверждение профессий
+                {% if total_pending > 0 %}
+                <span class="pending-count">{{ total_pending }}</span>
+                {% endif %}
+            </h1>
+            
+            <div class="filters">
+                <select class="filter-select" id="departmentFilter">
+                    <option value="">Все департаменты</option>
+                    <option value="IT Department">IT Department</option>
+                    <option value="HR Department">HR Department</option>
+                    <option value="Risk Department">Risk Department</option>
+                    <option value="Analytics Department">Analytics Department</option>
+                </select>
+                
+                <select class="filter-select" id="statusFilter">
+                    <option value="">Все статусы</option>
+                    <option value="tags_generated">Ожидают утверждения</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- Professions List -->
+        {% if professions and professions|length > 0 %}
+        <div class="professions-grid fade-in" id="professionsGrid">
+            {% for profession in professions %}
+            <div class="profession-card" data-department="{{ profession.department }}" data-status="{{ profession.status }}">
+                <div class="profession-header">
+                    <h3 class="profession-title">{{ profession.bank_title }}</h3>
+                    <div class="profession-subtitle">{{ profession.real_name }}</div>
+                    {% if profession.specialization %}
+                    <div class="profession-subtitle">{{ profession.specialization }}</div>
+                    {% endif %}
+                    <div class="profession-meta">
+                        <span>ID: {{ profession.id }}</span>
+                        <span>Создано: {{ profession.created_at[:10] }}</span>
+                        <span>Автор: {{ profession.created_by.split('@')[0] }}</span>
+                    </div>
+                </div>
+                
+                <div class="profession-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Департамент:</span>
+                        <span class="detail-value">{{ profession.department }}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Статус:</span>
+                        <span class="detail-value">Ожидает утверждения</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Тегов сгенерировано:</span>
+                        <span class="detail-value">{{ profession.tags|length }}</span>
+                    </div>
+                </div>
+                
+                {% if profession.tags %}
+                <div class="tags-preview">
+                    <div class="tags-title">🏷️ Теги (топ-5):</div>
+                    <div class="tags-container">
+                        {% set sorted_tags = profession.tags.items() | list | sort(attribute=1, reverse=true) %}
+                        {% for tag, weight in sorted_tags[:5] %}
+                        <span class="tag {% if weight >= 85 %}high-priority{% elif weight >= 70 %}medium-priority{% endif %}">
+                            {{ tag }} ({{ weight }}%)
+                        </span>
+                        {% endfor %}
+                        {% if profession.tags|length > 5 %}
+                        <span class="tag">+{{ profession.tags|length - 5 }} еще</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="profession-actions">
+                    <button class="btn btn-primary" onclick="openApprovalModal('{{ profession.id }}')">
+                        🔍 Проверить и утвердить
+                    </button>
+                    <button class="btn btn-danger" onclick="returnToHR('{{ profession.id }}')">
+                        ↩️ Вернуть на доработку
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <!-- Empty State -->
+        <div class="empty-state fade-in">
+            <div class="empty-icon">✅</div>
+            <h2 class="empty-title">Нет профессий для утверждения</h2>
+            <p class="empty-text">
+                {% if user.role == 'super_admin' %}
+                Все профессии в системе утверждены или отсутствуют профессии со статусом "ожидают утверждения".
+                {% else %}
+                Все профессии вашего отдела утверждены или отсутствуют новые профессии для проверки.
+                {% endif %}
+            </p>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Approval Modal -->
+    <div class="modal" id="approvalModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">🔍 Детальная проверка профессии</h2>
+                <button class="modal-close" onclick="closeApprovalModal()">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <!-- Основная информация -->
+                <div class="modal-section">
+                    <h3 class="modal-section-title">📋 Основная информация</h3>
+                    <div id="professionInfo"></div>
+                </div>
+                
+                <!-- ИИ Анализ -->
+                <div class="modal-section">
+                    <h3 class="modal-section-title">🤖 Анализ ИИ помощника</h3>
+                    <div class="ai-analysis" id="aiAnalysis">
+                        <div>Загрузка анализа...</div>
+                    </div>
+                </div>
+                
+                <!-- Редактор тегов -->
+                <div class="modal-section">
+                    <h3 class="modal-section-title">🏷️ Редактирование тегов</h3>
+                    <div class="tags-editor" id="tagsEditor"></div>
+                </div>
+                
+                <!-- Комментарий -->
+                <div class="modal-section">
+                    <h3 class="modal-section-title">💬 Комментарий</h3>
+                    <div class="form-group">
+                        <label class="form-label">Комментарий для HR (опционально)</label>
+                        <textarea class="form-textarea" id="approvalComment" 
+                                  placeholder="Ваши замечания, предложения или одобрение..."></textarea>
+                    </div>
+                </div>
+                
+                <!-- ИИ Чат -->
+                <div class="modal-section">
+                    <h3 class="modal-section-title">🤖 Консультация с ИИ</h3>
+                    <div class="ai-chat">
+                        <div class="ai-chat-header">Задайте вопрос ИИ помощнику</div>
+                        <div class="ai-chat-messages" id="modalAIChatMessages">
+                            <div class="ai-message">
+                                Добро пожаловать! Я помогу проанализировать профессию. Спрашивайте о тегах, дубликатах или рекомендациях.
+                            </div>
+                        </div>
+                        <div class="ai-chat-input">
+                            <input type="text" id="modalAIChatInput" placeholder="Ваш вопрос...">
+                            <button onclick="sendModalAIMessage()">Отправить</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Actions -->
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="closeApprovalModal()">Отмена</button>
+                    <button class="btn btn-danger" onclick="returnToHRWithModal()">↩️ Вернуть на доработку</button>
+                    <button class="btn btn-primary" onclick="approveProfession()">✅ Утвердить профессию</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentProfessionId = null;
+        let currentProfessionData = null;
+        let modalWS = null;
+        
+        // WebSocket для чата в модалке
+        function initModalWebSocket() {
+            if (modalWS) return;
+            
+            const userId = '{{ user.id }}';
+            modalWS = new WebSocket(`ws://localhost:8002/ws/chat/${userId}`);
+            
+            modalWS.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.type === 'ai_response') {
+                    addModalAIMessage(data.message);
+                }
+            };
+            
+            modalWS.onerror = function(error) {
+                console.error('Modal WebSocket error:', error);
+                addModalAIMessage('Ошибка соединения с ИИ помощником');
+            };
+        }
+        
+        // Открытие модалки утверждения
+        async function openApprovalModal(professionId) {
+            currentProfessionId = professionId;
+            
+            try {
+                // Получаем детальную информацию о профессии
+                const response = await fetch(`/api/profession/${professionId}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentProfessionData = result.profession;
+                    
+                    // Заполняем основную информацию
+                    fillProfessionInfo(result.profession);
+                    
+                    // Заполняем анализ ИИ
+                    fillAIAnalysis(result.analysis);
+                    
+                    // Заполняем редактор тегов
+                    fillTagsEditor(result.profession.tags);
+                    
+                    // Инициализируем WebSocket
+                    initModalWebSocket();
+                    
+                    // Показываем модалку
+                    document.getElementById('approvalModal').classList.add('active');
+                    
+                } else {
+                    alert('Ошибка загрузки профессии: ' + result.error);
+                }
+                
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+        
+        // Заполнение основной информации
+        function fillProfessionInfo(profession) {
+            const infoDiv = document.getElementById('professionInfo');
+            
+            infoDiv.innerHTML = `
+                <div class="detail-row">
+                    <span class="detail-label">ID:</span>
+                    <span class="detail-value">${profession.id}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Банковское название:</span>
+                    <span class="detail-value">${profession.bank_title}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Реальная профессия:</span>
+                    <span class="detail-value">${profession.real_name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Специализация:</span>
+                    <span class="detail-value">${profession.specialization || 'Не указана'}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Департамент:</span>
+                    <span class="detail-value">${profession.department}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Создано:</span>
+                    <span class="detail-value">${new Date(profession.created_at).toLocaleString('ru-RU')}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Автор:</span>
+                    <span class="detail-value">${profession.created_by}</span>
+                </div>
+            `;
+        }
+        
+        // Заполнение анализа ИИ
+        function fillAIAnalysis(analysis) {
+            const analysisDiv = document.getElementById('aiAnalysis');
+            
+            if (!analysis || !analysis.recommendations) {
+                analysisDiv.innerHTML = '<div class="analysis-item">Анализ недоступен</div>';
+                return;
+            }
+            
+            let html = '';
+            
+            // Общая оценка
+            if (analysis.overall_score !== undefined) {
+                const score = Math.round(analysis.overall_score * 100);
+                const scoreClass = score >= 80 ? '' : score >= 60 ? 'warning' : 'error';
+                html += `<div class="analysis-item ${scoreClass}">
+                    <strong>Общая оценка: ${score}%</strong>
+                </div>`;
+            }
+            
+            // Рекомендации
+            if (analysis.recommendations && analysis.recommendations.length > 0) {
+                analysis.recommendations.forEach(rec => {
+                    const recClass = rec.includes('❌') ? 'error' : rec.includes('⚠️') ? 'warning' : '';
+                    html += `<div class="analysis-item ${recClass}">${rec}</div>`;
+                });
+            }
+            
+            // Предлагаемые действия
+            if (analysis.suggested_actions && analysis.suggested_actions.length > 0) {
+                html += '<div style="margin-top: 15px;"><strong>Рекомендуемые действия:</strong></div>';
+                analysis.suggested_actions.forEach(action => {
+                    html += `<div class="analysis-item">
+                        <strong>${action.title}</strong><br>
+                        ${action.description}
+                    </div>`;
+                });
+            }
+            
+            analysisDiv.innerHTML = html;
+        }
+        
+        // Заполнение редактора тегов
+        function fillTagsEditor(tags) {
+            const editorDiv = document.getElementById('tagsEditor');
+            
+            if (!tags || Object.keys(tags).length === 0) {
+                editorDiv.innerHTML = '<div>Теги не найдены</div>';
+                return;
+            }
+            
+            let html = '';
+            
+            // Сортируем теги по весу
+            const sortedTags = Object.entries(tags).sort((a, b) => b[1] - a[1]);
+            
+            sortedTags.forEach(([tag, weight]) => {
+                html += `
+                    <div class="tag-editor-item">
+                        <span class="tag-name">${tag}</span>
+                        <input type="number" class="tag-weight-input" value="${weight}" 
+                               min="50" max="100" data-tag="${tag}">
+                        <span style="font-size: 0.8rem; color: #6B7280;">%</span>
+                        <button class="tag-remove" onclick="removeTag('${tag}')">Удалить</button>
+                    </div>
+                `;
+            });
+            
+            // Кнопка добавления нового тега
+            html += `
+                <div style="margin-top: 15px;">
+                    <button class="btn btn-secondary" onclick="addNewTag()">➕ Добавить тег</button>
+                </div>
+            `;
+            
+            editorDiv.innerHTML = html;
+        }
+        
+        // Функции редактирования тегов
+        function removeTag(tagName) {
+            const tagItem = document.querySelector(`[data-tag="${tagName}"]`).closest('.tag-editor-item');
+            tagItem.remove();
+        }
+        
+        function addNewTag() {
+            const editorDiv = document.getElementById('tagsEditor');
+            const newTagHtml = `
+                <div class="tag-editor-item">
+                    <input type="text" class="tag-name" placeholder="Название тега" style="flex: 1; padding: 5px 8px; border: 1px solid #D1D5DB; border-radius: 4px;">
+                    <input type="number" class="tag-weight-input" value="70" min="50" max="100">
+                    <span style="font-size: 0.8rem; color: #6B7280;">%</span>
+                    <button class="tag-remove" onclick="this.closest('.tag-editor-item').remove()">Удалить</button>
+                </div>
+            `;
+            
+            const addButton = editorDiv.querySelector('div:last-child');
+            addButton.insertAdjacentHTML('beforebegin', newTagHtml);
+        }
+        
+        // Сбор отредактированных тегов
+        function getEditedTags() {
+            const tags = {};
+            const tagItems = document.querySelectorAll('.tag-editor-item');
+            
+            tagItems.forEach(item => {
+                const nameElement = item.querySelector('.tag-name');
+                const weightElement = item.querySelector('.tag-weight-input');
+                
+                if (nameElement && weightElement) {
+                    const name = typeof nameElement.value !== 'undefined' ? nameElement.value : nameElement.textContent;
+                    const weight = parseInt(weightElement.value);
+                    
+                    if (name.trim() && weight >= 50 && weight <= 100) {
+                        tags[name.trim()] = weight;
+                    }
+                }
+            });
+            
+            return tags;
+        }
+        
+        // ИИ чат в модалке
+        function sendModalAIMessage() {
+            const input = document.getElementById('modalAIChatInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            addModalUserMessage(message);
+            input.value = '';
+            
+            // Отправляем через WebSocket
+            if (modalWS && modalWS.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    message: message,
+                    form_context: currentProfessionData,
+                    chat_type: 'head_approval'
+                }));
+            }
+        }
+        
+        function addModalUserMessage(message) {
+            const messagesDiv = document.getElementById('modalAIChatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'ai-message user-message';
+            messageDiv.textContent = message;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        function addModalAIMessage(message) {
+            const messagesDiv = document.getElementById('modalAIChatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'ai-message';
+            messageDiv.textContent = message;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        // Утверждение профессии
+        async function approveProfession() {
+            if (!currentProfessionId) return;
+            
+            const correctedTags = getEditedTags();
+            const comment = document.getElementById('approvalComment').value;
+            
+            try {
+                const response = await fetch(`/api/approve-profession/${currentProfessionId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'approve',
+                        tags: correctedTags,
+                        comment: comment
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('✅ Профессия успешно утверждена! Вопросы будут сгенерированы автоматически.');
+                    closeApprovalModal();
+                    location.reload(); // Перезагружаем страницу
+                } else {
+                    alert('Ошибка: ' + result.error);
+                }
+                
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+        
+        // Возврат на доработку
+        async function returnToHRWithModal() {
+            const reason = prompt('Укажите причину возврата:');
+            if (!reason) return;
+            
+            const comment = document.getElementById('approvalComment').value;
+            
+            try {
+                const response = await fetch(`/api/approve-profession/${currentProfessionId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'return_to_hr',
+                        return_reason: reason,
+                        return_comment: comment
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('↩️ Профессия возвращена на доработку. HR получит уведомление.');
+                    closeApprovalModal();
+                    location.reload();
+                } else {
+                    alert('Ошибка: ' + result.error);
+                }
+                
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+        
+        // Быстрый возврат на доработку
+        async function returnToHR(professionId) {
+            const reason = prompt('Укажите причину возврата на доработку:');
+            if (!reason) return;
+            
+            try {
+                const response = await fetch(`/api/approve-profession/${professionId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'return_to_hr',
+                        return_reason: reason,
+                        return_comment: ''
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('↩️ Профессия возвращена на доработку.');
+                    location.reload();
+                } else {
+                    alert('Ошибка: ' + result.error);
+                }
+                
+            } catch (error) {
+                alert('Ошибка: ' + error.message);
+            }
+        }
+        
+        // Закрытие модалки
+        function closeApprovalModal() {
+            document.getElementById('approvalModal').classList.remove('active');
+            currentProfessionId = null;
+            currentProfessionData = null;
+            
+            if (modalWS) {
+                modalWS.close();
+                modalWS = null;
+            }
+        }
+        
+        // Фильтры
+        function initFilters() {
+            const departmentFilter = document.getElementById('departmentFilter');
+            const statusFilter = document.getElementById('statusFilter');
+            
+            function applyFilters() {
+                const departmentValue = departmentFilter.value;
+                const statusValue = statusFilter.value;
+                
+                const cards = document.querySelectorAll('.profession-card');
+                
+                cards.forEach(card => {
+                    const department = card.dataset.department;
+                    const status = card.dataset.status;
+                    
+                    const departmentMatch = !departmentValue || department === departmentValue;
+                    const statusMatch = !statusValue || status === statusValue;
+                    
+                    if (departmentMatch && statusMatch) {
+                        card.style.display = 'block';
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+            }
+            
+            departmentFilter.addEventListener('change', applyFilters);
+            statusFilter.addEventListener('change', applyFilters);
+        }
+        
+        // Enter в чате модалки
+        document.getElementById('modalAIChatInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendModalAIMessage();
+            }
+        });
+        
+        // Закрытие модалки по клику вне её
+        document.getElementById('approvalModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeApprovalModal();
+            }
+        });
+        
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            initFilters();
+            
+            // Анимация загрузки
+            const elements = document.querySelectorAll('.fade-in');
+            elements.forEach((el, index) => {
+                el.style.animationDelay = `${index * 0.1}s`;
+            });
+        });
+    </script>
+</body>
+</html>

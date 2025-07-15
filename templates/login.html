@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход в систему - HR Admin Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #1DB584 0%, #159A73 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .login-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            overflow: hidden;
+            width: 100%;
+            max-width: 900px;
+            min-height: 600px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+        }
+        
+        .login-left {
+            background: linear-gradient(135deg, #1DB584 0%, #159A73 100%);
+            padding: 60px 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            color: white;
+            text-align: center;
+        }
+        
+        .logo {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+        }
+        
+        .login-title {
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        
+        .login-subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            line-height: 1.5;
+            margin-bottom: 40px;
+        }
+        
+        .features {
+            text-align: left;
+        }
+        
+        .feature {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            font-size: 1rem;
+        }
+        
+        .feature-icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+        
+        .login-right {
+            padding: 60px 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .form-header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .form-header h2 {
+            color: #2C3E50;
+            font-size: 1.8rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .form-header p {
+            color: #7F8C8D;
+            font-size: 1rem;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        .form-label {
+            display: block;
+            font-weight: 600;
+            color: #2C3E50;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 15px 20px;
+            border: 2px solid #E8F4F8;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: #F8FAFB;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #1DB584;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(29, 181, 132, 0.1);
+        }
+        
+        .btn-login {
+            background: #1DB584;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.3s ease;
+            margin-bottom: 30px;
+        }
+        
+        .btn-login:hover {
+            background: #159A73;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(29, 181, 132, 0.3);
+        }
+        
+        .error-message {
+            background: #FEF2F2;
+            border: 1px solid #FECACA;
+            color: #DC2626;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .demo-accounts {
+            background: #F0F9FF;
+            border: 1px solid #BAE6FD;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        
+        .demo-title {
+            color: #1E40AF;
+            font-weight: 600;
+            margin-bottom: 15px;
+            font-size: 0.95rem;
+        }
+        
+        .demo-account {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #E0F2FE;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .demo-account:last-child {
+            border-bottom: none;
+        }
+        
+        .demo-account:hover {
+            background: rgba(29, 181, 132, 0.05);
+            border-radius: 6px;
+            padding-left: 10px;
+            padding-right: 10px;
+        }
+        
+        .demo-info {
+            flex: 1;
+        }
+        
+        .demo-name {
+            font-weight: 600;
+            color: #2C3E50;
+            font-size: 0.9rem;
+        }
+        
+        .demo-role {
+            color: #7F8C8D;
+            font-size: 0.8rem;
+        }
+        
+        .demo-email {
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #6B7280;
+        }
+        
+        @media (max-width: 768px) {
+            .login-container {
+                grid-template-columns: 1fr;
+                margin: 20px;
+                max-width: none;
+            }
+            
+            .login-left {
+                padding: 40px 30px;
+            }
+            
+            .login-right {
+                padding: 40px 30px;
+            }
+            
+            .features {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <!-- Левая часть - брендинг -->
+        <div class="login-left">
+            <div class="logo">🏦 Halyk Bank</div>
+            <h1 class="login-title">HR Admin Panel v2.0</h1>
+            <p class="login-subtitle">Система управления профессиями с ИИ помощниками</p>
+            
+            <div class="features">
+                <div class="feature">
+                    <div class="feature-icon">🤖</div>
+                    <div>
+                        <strong>4 ИИ агента</strong><br>
+                        Автоматический анализ и генерация
+                    </div>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <div>
+                        <strong>Умный workflow</strong><br>
+                        От создания до готовых вопросов
+                    </div>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🎯</div>
+                    <div>
+                        <strong>Контроль качества</strong><br>
+                        Проверка дубликатов и ошибок
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Правая часть - форма входа -->
+        <div class="login-right">
+            <div class="form-header">
+                <h2>Добро пожаловать!</h2>
+                <p>Войдите в свой аккаунт</p>
+            </div>
+            
+            {% if error %}
+            <div class="error-message">
+                ❌ {{ error }}
+            </div>
+            {% endif %}
+            
+            <form method="post" action="/login">
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" name="email" class="form-input" required 
+                           placeholder="your.email@halykbank.kz">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Пароль</label>
+                    <input type="password" name="password" class="form-input" required 
+                           placeholder="Введите пароль">
+                </div>
+                
+                <button type="submit" class="btn-login">
+                    🚀 Войти в систему
+                </button>
+            </form>
+            
+            <!-- Демо аккаунты -->
+            <div class="demo-accounts">
+                <div class="demo-title">🎭 Демо аккаунты для тестирования:</div>
+                
+                {% for account in demo_accounts %}
+                <div class="demo-account" onclick="fillCredentials('{{ account.email }}', '{{ account.password }}')">
+                    <div class="demo-info">
+                        <div class="demo-name">{{ account.name }}</div>
+                        <div class="demo-role">{{ account.position }}</div>
+                    </div>
+                    <div class="demo-email">{{ account.email }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function fillCredentials(email, password) {
+            document.querySelector('input[name="email"]').value = email;
+            document.querySelector('input[name="password"]').value = password;
+            
+            // Добавляем визуальный эффект
+            const form = document.querySelector('form');
+            form.style.transform = 'scale(0.98)';
+            setTimeout(() => {
+                form.style.transform = 'scale(1)';
+            }, 150);
+        }
+        
+        // Анимация при загрузке
+        document.addEventListener('DOMContentLoaded', function() {
+            const container = document.querySelector('.login-container');
+            container.style.opacity = '0';
+            container.style.transform = 'translateY(30px)';
+            
+            setTimeout(() => {
+                container.style.transition = 'all 0.6s ease';
+                container.style.opacity = '1';
+                container.style.transform = 'translateY(0)';
+            }, 100);
+        });
+        
+        // Обработка отправки формы с анимацией
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const btn = document.querySelector('.btn-login');
+            btn.innerHTML = '⏳ Вход в систему...';
+            btn.disabled = true;
+        });
+    </script>
+</body>
+</html>
