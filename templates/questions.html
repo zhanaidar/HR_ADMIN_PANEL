@@ -1078,15 +1078,37 @@
         
         // Генерация недостающих вопросов
         async function generateAllQuestions() {
-            if (!confirm('Запустить генерацию вопросов для всех утвержденных профессий?')) {
+            if (!confirm('Запустить генерацию вопросов для утвержденной профессии prof_0005?')) {
                 return;
             }
             
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳ Генерация вопросов...';
+            btn.disabled = true;
+            
             try {
-                // Здесь можно добавить вызов API для массовой генерации
-                alert('🤖 Функция массовой генерации будет добавлена в следующих версиях!');
+                const response = await fetch('/api/generate-questions/prof_0005', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`✅ Успешно сгенерировано ${result.questions_count} вопросов!\n\nСтатистика:\n- Легких: ${result.stats.questions_by_difficulty.easy}\n- Средних: ${result.stats.questions_by_difficulty.medium}\n- Сложных: ${result.stats.questions_by_difficulty.hard}`);
+                    location.reload(); // Перезагружаем страницу чтобы показать новые вопросы
+                } else {
+                    alert('❌ Ошибка генерации: ' + result.error);
+                }
+                
             } catch (error) {
-                alert('Ошибка: ' + error.message);
+                alert('❌ Ошибка запроса: ' + error.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
             }
         }
         
