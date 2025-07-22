@@ -1439,6 +1439,960 @@ async def daily_questions_generation():
         
     except Exception as e:
         logger.error(f"❌ Ошибка ежедневной генерации вопросов: {e}")
+        
+        
+        
+# === УПРАВЛЕНИЕ ТЕСТ-СЕССИЯМИ КАНДИДАТОВ ===
+# Добавьте эти endpoints в ваш main.py
+
+import uuid
+import random
+from collections import Counter
+
+@app.get("/create-candidate-test", response_class=HTMLResponse)
+async def create_candidate_test_page(request: Request):
+    """Страница создания теста для кандидата"""
+    user = request.session.get("user")
+    if not user:
+        return RedirectResponse(url="/login")
+    
+    # Проверяем права (могут создавать тесты те, кто может просматривать вопросы или создавать профессии)
+    if not (can_user_view_questions(user["role"]) or can_user_create_profession(user["role"])):
+        return templates.TemplateResponse("access_denied.html", {
+            "request": request,
+            "user": user,
+            "user_role_name": get_user_role_name(user["role"]),
+            "message": "У вас нет прав для создания тестов",
+            "allowed_roles": ["super_admin", "hr_head_admin"]
+        })
+    
+    # Получаем доступные профессии с вопросами
+    available_professions = get_professions_with_questions()
+    
+    return templates.TemplateResponse("create_candidate_test.html", {
+        "request": request,
+        "user": user,
+        "user_role_name": get_user_role_name(user["role"]),
+        "professions": available_professions,
+        "total_professions": len(available_professions)
+    })
+
+@app.get("/manage-test-sessions", response_class=HTMLResponse)
+async def manage_test_sessions_page(request: Request):
+    """Страница управления тест-сессиями - только для супер админа"""
+    user = request.session.get("user")
+    if not user:
+        return RedirectResponse(url="/login")
+    
+    # Только супер админ может управлять тест-сессиями
+    if not can_user_view_questions(user["role"]):
+        return templates.TemplateResponse("access_denied.html", {
+            "request": request,
+            "user": user,
+            "user_role_name": get_user_role_name(user["role"]),
+            "message": "Управление тест-сессиями доступно только супер администратору",
+            "allowed_roles": ["super_admin"]
+        })
+    
+    # Получаем все тест-сессии
+    all_test_sessions = get_all_test_sessions()
+    
+    return templates.TemplateResponse("manage_test_sessions.html", {
+        "request": request,
+        "user": user,
+        "user_role_name": get_user_role_name(user["role"]),
+        "test_sessions": all_test_sessions["test_sessions"],
+        "stats": all_test_sessions["stats"],
+        "total_sessions": len(all_test_sessions["test_sessions"])
+    })
+
+@app.get("/api/professions-with-questions")
+async def get_professions_with_questions(request: Request):
+    """Получение профессий с готовыми вопросами для создания тестов"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    try:
+        professions = get_professions_with_questions()
+        return JSONResponse({
+            "success": True,
+            "professions": professions,
+            "total": len(professions)
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения профессий с вопросами: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/profession-questions-preview/{profession_id}")
+async def get_profession_questions_preview(profession_id: str, request: Request):
+    """Получение предварительного просмотра вопросов профессии по уровням"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    try:
+        profession = get_profession_by_id(profession_id)
+        if not profession:
+            return JSONResponse({"error": "Профессия не найдена"}, status_code=404)
+        
+        questions = profession.get("questions", [])
+        if not questions:
+            return JSONResponse({"error": "У этой профессии нет вопросов"}, status_code=404)
+        
+        # Группируем вопросы по сложности
+        questions_by_difficulty = {"easy": [], "medium": [], "hard": []}
+        tags_stats = {}
+        
+        for question in questions:
+            difficulty = question.get("difficulty", "medium")
+            tag = question.get("tag", "General")
+            
+            if difficulty in questions_by_difficulty:
+                questions_by_difficulty[difficulty].append(question)
+            
+            if tag not in tags_stats:
+                tags_stats[tag] = 0
+            tags_stats[tag] += 1
+        
+        # Статистика по уровням
+        levels_stats = {
+            "junior": {"available": len(questions_by_difficulty["easy"]), "difficulty": "easy"},
+            "middle": {"available": len(questions_by_difficulty["medium"]), "difficulty": "medium"},
+            "senior": {"available": len(questions_by_difficulty["hard"]), "difficulty": "hard"}
+        }
+        
+        return JSONResponse({
+            "success": True,
+            "profession": {
+                "id": profession["id"],
+                "name": profession["real_name"],
+                "specialization": profession.get("specialization", "Общая"),
+                "bank_title": profession["bank_title"]
+            },
+            "tags": profession.get("tags", {}),
+            "levels_stats": levels_stats,
+            "tags_stats": tags_stats,
+            "total_questions": len(questions)
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения предпросмотра вопросов: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.post("/api/create-candidate-test")
+async def create_candidate_test(request: Request, test_data: dict):
+    """Создание нового теста для кандидата"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    # Проверяем права
+    if not (can_user_view_questions(user["role"]) or can_user_create_profession(user["role"])):
+        return JSONResponse({"error": "У вас нет прав для создания тестов"}, status_code=403)
+    
+    try:
+        # Валидируем данные
+        candidate_name = test_data.get("candidate_name", "").strip()
+        candidate_iin = test_data.get("candidate_iin", "").strip()
+        candidate_phone = test_data.get("candidate_phone", "").strip()
+        candidate_email = test_data.get("candidate_email", "").strip()
+        profession_id = test_data.get("profession_id")
+        level = test_data.get("level")  # junior/middle/senior
+        
+        if not candidate_name:
+            return JSONResponse({"error": "ФИО кандидата обязательно для заполнения"}, status_code=400)
+        
+        if not profession_id or not level:
+            return JSONResponse({"error": "Выберите профессию и уровень"}, status_code=400)
+        
+        if level not in ["junior", "middle", "senior"]:
+            return JSONResponse({"error": "Некорректный уровень"}, status_code=400)
+        
+        # Получаем профессию
+        profession = get_profession_by_id(profession_id)
+        if not profession or not profession.get("questions"):
+            return JSONResponse({"error": "Профессия не найдена или у неё нет вопросов"}, status_code=404)
+        
+        # Создаем тест-сессию
+        test_session = await create_test_session(test_data, profession, user)
+        
+        logger.info(f"👤 Тест-сессия создана для {candidate_name} (ID: {test_session['test_session_id']}) пользователем {user['name']}")
+        
+        return JSONResponse({
+            "success": True,
+            "test_session_id": test_session["test_session_id"],
+            "test_url": test_session["test_url"],
+            "candidate_name": candidate_name,
+            "questions_count": len(test_session["questions"]),
+            "level": level,
+            "message": f"Тест для {candidate_name} успешно создан!"
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания тест-сессии: {e}")
+        return JSONResponse({"error": f"Ошибка создания теста: {str(e)}"}, status_code=500)
+
+@app.get("/api/test-sessions-overview")
+async def get_test_sessions_overview(request: Request):
+    """Получение обзора всех тест-сессий"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    if not can_user_view_questions(user["role"]):
+        return JSONResponse({"error": "Доступ запрещен"}, status_code=403)
+    
+    try:
+        all_test_sessions = get_all_test_sessions()
+        return JSONResponse({
+            "success": True,
+            "test_sessions": all_test_sessions["test_sessions"],
+            "stats": all_test_sessions["stats"]
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения обзора тест-сессий: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.get("/api/test-session/{session_id}")
+async def get_test_session_details(session_id: str, request: Request):
+    """Получение деталей тест-сессии"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    try:
+        test_session = get_test_session_by_id(session_id)
+        if not test_session:
+            return JSONResponse({"error": "Тест-сессия не найдена"}, status_code=404)
+        
+        return JSONResponse({
+            "success": True,
+            "test_session": test_session
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения тест-сессии {session_id}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.delete("/api/test-session/{session_id}")
+async def delete_test_session(session_id: str, request: Request):
+    """Удаление тест-сессии - только для супер админа"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    # Только супер админ может удалять тест-сессии
+    if user["role"] != "super_admin":
+        return JSONResponse({"error": "Доступ запрещен"}, status_code=403)
+    
+    try:
+        success = await delete_test_session_by_id(session_id)
+        
+        if success:
+            logger.info(f"🗑️ Тест-сессия удалена: {session_id} пользователем {user['name']}")
+            return JSONResponse({
+                "success": True,
+                "message": "Тест-сессия успешно удалена"
+            })
+        else:
+            return JSONResponse({"error": "Тест-сессия не найдена"}, status_code=404)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка удаления тест-сессии {session_id}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+    
+    
+@app.post("/api/submit-test")
+async def submit_test_results(request: Request):
+    """Отправка результатов теста кандидатом"""
+    try:
+        data = await request.json()
+        session_id = data.get('session_id')
+        answers = data.get('answers', [])
+        time_spent = data.get('time_spent', 0)
+        completed_at = data.get('completed_at')
+        security_stats = data.get('security_stats', {})
+        
+        if not session_id:
+            return {"status": "error", "message": "session_id обязателен"}
+        
+        # Загружаем данные тест-сессий
+        sessions_file = DATA_DIR / "test_sessions.json"
+        
+        if not sessions_file.exists():
+            return {"status": "error", "message": "Файл тест-сессий не найден"}
+        
+        with open(sessions_file, 'r', encoding='utf-8') as f:
+            sessions_data = json.load(f)
+        
+        # Находим нужную сессию
+        session_found = False
+        for session in sessions_data.get("test_sessions", []):
+            if session["test_session_id"] == session_id:
+                # Рассчитываем результаты
+                results = calculate_test_results(session["questions"], answers)
+                
+                # Генерируем рекомендации через ИИ
+                recommendations = await generate_candidate_recommendations(session, results)
+                results["recommendations"] = recommendations
+                
+                # Обновляем данные сессии
+                session["answers"] = answers
+                session["time_spent"] = time_spent
+                session["completed_at"] = completed_at
+                session["status"] = "completed"
+                session["started_at"] = session.get("started_at") or completed_at
+                session["results"] = results
+                session["security_stats"] = security_stats
+                
+                session_found = True
+                break
+        
+        if not session_found:
+            return {"status": "error", "message": "Тест-сессия не найдена"}
+        
+        # Сохраняем обновленные данные
+        with open(sessions_file, 'w', encoding='utf-8') as f:
+            json.dump(sessions_data, f, ensure_ascii=False, indent=2)
+        
+        return {
+            "status": "success", 
+            "message": "Результаты сохранены",
+            "results": results
+        }
+        
+    except Exception as e:
+        print(f"Ошибка сохранения результатов: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+def calculate_test_results(questions: list, answers: list) -> dict:
+    """Рассчитывает результаты тестирования с оценкой и анализом по категориям"""
+    if not questions or not answers:
+        return {
+            "correct_answers": 0,
+            "total_questions": len(questions) if questions else 0,
+            "answered_questions": 0,
+            "percentage": 0.0,
+            "grade": "F",
+            "grade_text": "Неудовлетворительно",
+            "category_breakdown": {}
+        }
+    
+    correct_answers = 0
+    answered_questions = 0
+    category_stats = {}
+    
+    for i, question in enumerate(questions):
+        category = question.get("category", "General")
+        difficulty = question.get("difficulty", "medium")
+        
+        # Инициализируем статистику по категории
+        if category not in category_stats:
+            category_stats[category] = {
+                "total": 0,
+                "correct": 0,
+                "answered": 0,
+                "questions": []
+            }
+        
+        category_stats[category]["total"] += 1
+        
+        if i < len(answers) and answers[i] is not None:
+            answered_questions += 1
+            category_stats[category]["answered"] += 1
+            
+            # Получаем правильный ответ (полный текст)
+            correct_answer_text = question.get("correct_answer", "")
+            options = question.get("options", [])
+            
+            # Находим индекс правильного ответа в массиве options
+            correct_index = -1
+            for idx, option in enumerate(options):
+                if option == correct_answer_text:
+                    correct_index = idx
+                    break
+            
+            # Проверяем ответ пользователя
+            is_correct = correct_index != -1 and answers[i] == correct_index
+            if is_correct:
+                correct_answers += 1
+                category_stats[category]["correct"] += 1
+            
+            # Сохраняем информацию о вопросе для рекомендаций
+            category_stats[category]["questions"].append({
+                "question": question.get("question", ""),
+                "difficulty": difficulty,
+                "tag": question.get("tag", ""),
+                "is_correct": is_correct,
+                "user_answer": options[answers[i]] if 0 <= answers[i] < len(options) else "Нет ответа",
+                "correct_answer": correct_answer_text
+            })
+    
+    # Рассчитываем процент и оценку
+    percentage = (correct_answers / answered_questions * 100) if answered_questions > 0 else 0.0
+    grade_info = calculate_grade(percentage)
+    
+    # Формируем разбивку по категориям
+    category_breakdown = {}
+    for category, stats in category_stats.items():
+        if stats["answered"] > 0:
+            cat_percentage = (stats["correct"] / stats["answered"]) * 100
+            category_breakdown[category] = {
+                "correct": stats["correct"],
+                "total": stats["answered"],
+                "percentage": round(cat_percentage, 1),
+                "grade": calculate_grade(cat_percentage)["grade"]
+            }
+    
+    return {
+        "correct_answers": correct_answers,
+        "total_questions": len(questions),
+        "answered_questions": answered_questions,
+        "percentage": round(percentage, 1),
+        "grade": grade_info["grade"],
+        "grade_text": grade_info["text"],
+        "grade_color": grade_info["color"],
+        "category_breakdown": category_breakdown,
+        "detailed_stats": category_stats  # Для генерации рекомендаций
+    }
+
+
+def calculate_grade(percentage: float) -> dict:
+    """Рассчитывает оценку на основе процента правильных ответов"""
+    if percentage >= 85:
+        return {"grade": "A", "text": "Отлично", "color": "#1DB584"}
+    elif percentage >= 70:
+        return {"grade": "B", "text": "Хорошо", "color": "#059669"}
+    elif percentage >= 50:
+        return {"grade": "C", "text": "Удовлетворительно", "color": "#F59E0B"}
+    elif percentage >= 30:
+        return {"grade": "D", "text": "Слабо", "color": "#F97316"}
+    else:
+        return {"grade": "F", "text": "Неудовлетворительно", "color": "#EF4444"}
+
+
+async def generate_candidate_recommendations(test_session: dict, results: dict) -> str:
+    """Генерирует персональные рекомендации для кандидата через ИИ"""
+    try:
+        # Подготавливаем данные для ИИ
+        candidate = test_session.get("candidate", {})
+        profession = test_session.get("profession", {})
+        level = test_session.get("level", "")
+        
+        # Анализируем слабые места
+        weak_categories = []
+        strong_categories = []
+        
+        for category, breakdown in results.get("category_breakdown", {}).items():
+            if breakdown["percentage"] < 70:
+                weak_categories.append(f"{category} ({breakdown['percentage']}%)")
+            elif breakdown["percentage"] >= 85:
+                strong_categories.append(f"{category} ({breakdown['percentage']}%)")
+        
+        # Формируем промпт для ИИ
+        prompt = f"""
+Создай персональные рекомендации для кандидата на основе результатов тестирования.
+
+ДАННЫЕ КАНДИДАТА:
+- ФИО: {candidate.get('full_name', 'Не указано')}
+- Должность: {profession.get('name', 'Не указано')} ({profession.get('specialization', '')})
+- Уровень: {level.capitalize()}
+
+РЕЗУЛЬТАТЫ ТЕСТИРОВАНИЯ:
+- Общий результат: {results.get('percentage', 0)}% (Оценка: {results.get('grade', 'F')})
+- Правильных ответов: {results.get('correct_answers', 0)}/{results.get('answered_questions', 0)}
+
+СИЛЬНЫЕ СТОРОНЫ: {', '.join(strong_categories) if strong_categories else 'Не выявлены'}
+СЛАБЫЕ ОБЛАСТИ: {', '.join(weak_categories) if weak_categories else 'Не выявлены'}
+
+ЗАДАЧА:
+Создай мотивирующие и конструктивные рекомендации на русском языке (максимум 200 слов).
+
+СТРУКТУРА ОТВЕТА:
+1. Краткая оценка результата (1-2 предложения)
+2. Что получается хорошо (если есть сильные стороны)
+3. Что стоит улучшить (конкретные области)
+4. 2-3 практических совета для развития
+
+ТОН: Поддерживающий, профессиональный, мотивирующий
+"""
+
+        # Вызываем ИИ (используем OpenAI API как в других агентах)
+        import openai
+        openai.api_key = OPENAI_API_KEY
+        
+        response = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "Ты опытный HR-специалист, который дает конструктивную обратную связь кандидатам после тестирования."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=300,
+            temperature=0.7
+        )
+        
+        recommendations = response.choices[0].message.content.strip()
+        logger.info(f"✅ Рекомендации сгенерированы для {candidate.get('full_name', 'кандидата')}")
+        
+        return recommendations
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка генерации рекомендаций: {e}")
+        
+        # Fallback рекомендации на основе оценки
+        grade = results.get("grade", "F")
+        percentage = results.get("percentage", 0)
+        
+        fallback_recommendations = {
+            "A": f"Превосходный результат! Вы показали отличные знания в области {profession.get('name', 'выбранной специальности')}. Продолжайте развиваться в этом направлении и делитесь знаниями с коллегами.",
+            
+            "B": f"Хороший результат! У вас есть solid понимание основ {profession.get('name', 'специальности')}. Рекомендуем углубить знания в слабых областях и продолжать практическое применение навыков.",
+            
+            "C": f"Удовлетворительный результат. Базовые знания присутствуют, но есть пространство для роста. Сосредоточьтесь на изучении основных концепций и регулярной практике.",
+            
+            "D": f"Результат показывает необходимость дополнительной подготовки. Рекомендуем пройти базовые курсы по {profession.get('name', 'специальности')} и получить практический опыт.",
+            
+            "F": f"Результат указывает на значительные пробелы в знаниях. Рекомендуем начать с изучения основ {profession.get('name', 'специальности')} через курсы и практические задания."
+        }
+        
+        return fallback_recommendations.get(grade, "Продолжайте развивать свои навыки и знания в выбранной области.")
+    
+    
+@app.get("/api/test-session-answers/{session_id}")
+async def get_test_session_answers(session_id: str, request: Request):
+    """Получение детальных ответов кандидата"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    if not can_user_view_questions(user["role"]):
+        return JSONResponse({"error": "Доступ запрещен"}, status_code=403)
+    
+    try:
+        test_session = get_test_session_by_id(session_id)
+        if not test_session:
+            return JSONResponse({"error": "Тест-сессия не найдена"}, status_code=404)
+        
+        if test_session.get("status") != "completed":
+            return JSONResponse({"error": "Тест еще не завершен"}, status_code=400)
+        
+        questions = test_session.get("questions", [])
+        answers = test_session.get("answers", [])
+        
+        # Формируем детальную информацию об ответах
+        answers_details = []
+        
+        for i, question in enumerate(questions):
+            options = question.get("options", [])
+            correct_answer_text = question.get("correct_answer", "")
+            
+            # Ответ пользователя
+            user_answer_index = answers[i] if i < len(answers) and answers[i] is not None else None
+            user_answer_text = options[user_answer_index] if user_answer_index is not None and 0 <= user_answer_index < len(options) else None
+            
+            # Правильный ответ
+            correct_index = -1
+            for idx, option in enumerate(options):
+                if option == correct_answer_text:
+                    correct_index = idx
+                    break
+            
+            # Проверяем правильность
+            is_correct = user_answer_index is not None and user_answer_index == correct_index
+            
+            answers_details.append({
+                "question": question.get("question", ""),
+                "options": options,
+                "user_answer": user_answer_text,
+                "correct_answer": correct_answer_text,
+                "is_correct": is_correct,
+                "difficulty": question.get("difficulty", "medium"),
+                "category": question.get("category", "General")
+            })
+        
+        return JSONResponse({
+            "success": True,
+            "test_session": test_session,
+            "answers_details": answers_details
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения ответов {session_id}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+# === СТРАНИЦА ПРОХОЖДЕНИЯ ТЕСТА ===
+
+@app.get("/take-test/{session_id}", response_class=HTMLResponse)
+async def take_test_page(session_id: str, request: Request):
+    """Страница прохождения теста кандидатом"""
+    try:
+        test_session = get_test_session_by_id(session_id)
+        if not test_session:
+            return templates.TemplateResponse("test_not_found.html", {
+                "request": request,
+                "session_id": session_id
+            })
+        
+        # Проверяем статус тест-сессии
+        if test_session.get("status") == "completed":
+            return templates.TemplateResponse("test_completed.html", {
+                "request": request,
+                "test_session": test_session
+            })
+        
+        return templates.TemplateResponse("take_test.html", {
+            "request": request,
+            "test_session": test_session,
+            "candidate": test_session.get("candidate", {}),
+            "profession": test_session.get("profession", {}),
+            "questions": test_session.get("questions", []),
+            "total_questions": len(test_session.get("questions", []))
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка загрузки теста {session_id}: {e}")
+        return templates.TemplateResponse("test_error.html", {
+            "request": request,
+            "error": str(e)
+        })
+
+# === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+
+def get_professions_with_questions() -> List[Dict[str, Any]]:
+    """Получение профессий с готовыми вопросами"""
+    try:
+        records_file = DATA_DIR / "profession_records.json"
+        
+        if not records_file.exists():
+            return []
+        
+        with open(records_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        professions_with_questions = []
+        
+        for record in data.get("profession_records", []):
+            if (record.get("status") == "questions_generated" and 
+                record.get("questions") and len(record["questions"]) > 0):
+                
+                questions = record["questions"]
+                questions_by_difficulty = {"easy": 0, "medium": 0, "hard": 0}
+                
+                for question in questions:
+                    difficulty = question.get("difficulty", "medium")
+                    if difficulty in questions_by_difficulty:
+                        questions_by_difficulty[difficulty] += 1
+                
+                professions_with_questions.append({
+                    "id": record["id"],
+                    "name": record["real_name"],
+                    "specialization": record.get("specialization", "Общая"),
+                    "bank_title": record["bank_title"],
+                    "department": record.get("department", ""),
+                    "questions_count": len(questions),
+                    "questions_by_difficulty": questions_by_difficulty,
+                    "tags": record.get("tags", {}),
+                    "updated_at": record.get("questions_generated_at")
+                })
+        
+        return professions_with_questions
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения профессий с вопросами: {e}")
+        return []
+
+async def create_test_session(test_data: Dict[str, Any], profession: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
+    """Создание новой тест-сессии для кандидата"""
+    try:
+        # Загружаем существующие тест-сессии
+        sessions_file = DATA_DIR / "test_sessions.json"
+        
+        if sessions_file.exists():
+            with open(sessions_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            data = {"test_sessions": []}
+        
+        # Создаем уникальный ID сессии
+        session_id = str(uuid.uuid4())
+        
+        # Отбираем вопросы для теста по уровню и тегам
+        selected_questions = select_questions_by_level_and_tags(
+            profession, 
+            test_data["level"]
+        )
+        
+        # Создаем тест-сессию
+        test_session = {
+            "test_session_id": session_id,
+            "candidate": {
+                "full_name": test_data.get("candidate_name", ""),
+                "iin": test_data.get("candidate_iin", ""),
+                "phone": test_data.get("candidate_phone", ""),
+                "email": test_data.get("candidate_email", "")
+            },
+            "profession": {
+                "id": profession["id"],
+                "name": profession["real_name"],
+                "specialization": profession.get("specialization", "Общая"),
+                "bank_title": profession["bank_title"]
+            },
+            "level": test_data["level"],
+            "questions": selected_questions,
+            "questions_count": len(selected_questions),
+            "test_url": f"http://localhost:8002/take-test/{session_id}",
+            "created_by": user["email"],
+            "created_at": datetime.now().isoformat() + "Z",
+            "status": "pending",  # pending/in_progress/completed
+            "started_at": None,
+            "completed_at": None,
+            "results": None,
+            "answers": []
+        }
+        
+        data["test_sessions"].append(test_session)
+        
+        # Сохраняем
+        with open(sessions_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        return test_session
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания тест-сессии: {e}")
+        raise
+
+def select_questions_by_level_and_tags(profession: Dict[str, Any], level: str, total_questions: int = 15) -> List[Dict[str, Any]]:
+    """Отбор вопросов по уровню и весам тегов"""
+    try:
+        # 1. Определяем сложность по уровню
+        difficulty_map = {
+            "junior": "easy",
+            "middle": "medium", 
+            "senior": "hard"
+        }
+        target_difficulty = difficulty_map.get(level, "medium")
+        
+        # 2. Фильтруем вопросы по сложности
+        all_questions = profession.get("questions", [])
+        questions_by_difficulty = [q for q in all_questions 
+                                 if q.get("difficulty") == target_difficulty]
+        
+        if len(questions_by_difficulty) < total_questions:
+            logger.warning(f"⚠️ Недостаточно вопросов уровня {target_difficulty}: {len(questions_by_difficulty)} из {total_questions}")
+            # Берем все доступные вопросы этой сложности
+            selected_questions = questions_by_difficulty.copy()
+        else:
+            # 3. Рассчитываем распределение по тегам на основе весов
+            tags_weights = profession.get("tags", {})
+            if not tags_weights:
+                # Если нет весов, берем случайные вопросы
+                selected_questions = random.sample(questions_by_difficulty, total_questions)
+            else:
+                selected_questions = distribute_questions_by_tags(
+                    questions_by_difficulty, 
+                    tags_weights, 
+                    total_questions
+                )
+        
+        # 4. Перемешиваем вопросы
+        random.shuffle(selected_questions)
+        
+        # 5. Убираем лишнее (если вдруг получилось больше)
+        return selected_questions[:total_questions]
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка отбора вопросов: {e}")
+        return []
+
+def distribute_questions_by_tags(questions: List[Dict[str, Any]], tags_weights: Dict[str, int], total_questions: int) -> List[Dict[str, Any]]:
+    """Распределение вопросов по тегам пропорционально весам"""
+    try:
+        # Группируем вопросы по тегам
+        questions_by_tag = {}
+        for question in questions:
+            tag = question.get("tag", "General")
+            if tag not in questions_by_tag:
+                questions_by_tag[tag] = []
+            questions_by_tag[tag].append(question)
+        
+        # Рассчитываем пропорциональное распределение
+        total_weight = sum(tags_weights.values())
+        selected_questions = []
+        remaining_questions = total_questions
+        
+        # Сортируем теги по весу (от большего к меньшему)
+        sorted_tags = sorted(tags_weights.items(), key=lambda x: x[1], reverse=True)
+        
+        for tag, weight in sorted_tags:
+            if remaining_questions <= 0 or tag not in questions_by_tag:
+                continue
+            
+            # Пропорциональное количество вопросов для этого тега
+            questions_count = round((weight / total_weight) * total_questions)
+            questions_count = min(questions_count, remaining_questions)
+            questions_count = min(questions_count, len(questions_by_tag[tag]))
+            questions_count = max(1 if remaining_questions > 0 else 0, questions_count)  # минимум 1 вопрос
+            
+            if questions_count > 0:
+                # Отбираем случайные вопросы этого тега
+                tag_questions = random.sample(questions_by_tag[tag], questions_count)
+                selected_questions.extend(tag_questions)
+                remaining_questions -= questions_count
+        
+        # Если остались нераспределенные вопросы, добираем случайными
+        if remaining_questions > 0:
+            used_questions = set(q.get("id") for q in selected_questions)
+            available_questions = [q for q in questions if q.get("id") not in used_questions]
+            
+            if available_questions:
+                additional_count = min(remaining_questions, len(available_questions))
+                additional_questions = random.sample(available_questions, additional_count)
+                selected_questions.extend(additional_questions)
+        
+        return selected_questions
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка распределения вопросов по тегам: {e}")
+        return random.sample(questions, min(total_questions, len(questions)))
+
+def get_all_test_sessions() -> Dict[str, Any]:
+    """Получение всех тест-сессий"""
+    try:
+        sessions_file = DATA_DIR / "test_sessions.json"
+        
+        if not sessions_file.exists():
+            return {"test_sessions": [], "stats": {}}
+        
+        with open(sessions_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        test_sessions = data.get("test_sessions", [])
+        
+        # Статистика
+        stats = {
+            "total_sessions": len(test_sessions),
+            "pending_sessions": len([s for s in test_sessions if s.get("status") == "pending"]),
+            "in_progress_sessions": len([s for s in test_sessions if s.get("status") == "in_progress"]),
+            "completed_sessions": len([s for s in test_sessions if s.get("status") == "completed"]),
+            "by_level": Counter(s.get("level") for s in test_sessions),
+            "by_profession": Counter(s.get("profession", {}).get("name") for s in test_sessions)
+        }
+        
+        return {"test_sessions": test_sessions, "stats": stats}
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения всех тест-сессий: {e}")
+        return {"test_sessions": [], "stats": {}}
+
+def get_test_session_by_id(session_id: str) -> Optional[Dict[str, Any]]:
+    """Получение тест-сессии по ID"""
+    try:
+        sessions_file = DATA_DIR / "test_sessions.json"
+        
+        if not sessions_file.exists():
+            return None
+        
+        with open(sessions_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        for session in data.get("test_sessions", []):
+            if session["test_session_id"] == session_id:
+                return session
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения тест-сессии {session_id}: {e}")
+        return None
+
+async def delete_test_session_by_id(session_id: str) -> bool:
+    """Удаление тест-сессии по ID"""
+    try:
+        sessions_file = DATA_DIR / "test_sessions.json"
+        
+        if not sessions_file.exists():
+            return False
+        
+        with open(sessions_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Ищем и удаляем тест-сессию
+        sessions = data.get("test_sessions", [])
+        initial_count = len(sessions)
+        
+        data["test_sessions"] = [session for session in sessions if session["test_session_id"] != session_id]
+        
+        if len(data["test_sessions"]) == initial_count:
+            return False  # Сессия не найдена
+        
+        # Сохраняем изменения
+        with open(sessions_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка удаления тест-сессии {session_id}: {e}")
+        return False
+
+# === ОБНОВЛЕНИЕ ФУНКЦИИ СТАТИСТИКИ ===
+
+async def get_user_statistics(user: Dict[str, Any]) -> Dict[str, Any]:
+    """Получение статистики для пользователя (обновленная версия с тест-сессиями)"""
+    try:
+        records_file = DATA_DIR / "profession_records.json"
+        sessions_file = DATA_DIR / "test_sessions.json"
+        
+        stats = {
+            "total_professions": 0,
+            "created_by_user": 0,
+            "pending_approval": 0,
+            "approved": 0,
+            "questions_generated": 0,
+            "test_sessions_created": 0  # Новая статистика для тест-сессий
+        }
+        
+        # Статистика профессий
+        if records_file.exists():
+            with open(records_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            for record in data.get("profession_records", []):
+                stats["total_professions"] += 1
+                
+                if record.get("created_by") == user["email"]:
+                    stats["created_by_user"] += 1
+                
+                status = record.get("status", "")
+                if status == "tags_generated":
+                    stats["pending_approval"] += 1
+                elif status == "approved_by_head":
+                    stats["approved"] += 1
+                elif status == "questions_generated":
+                    stats["questions_generated"] += 1
+        
+        # Статистика тест-сессий
+        if sessions_file.exists():
+            with open(sessions_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Считаем все тест-сессии или созданные пользователем (в зависимости от роли)
+            if user["role"] == "super_admin":
+                stats["test_sessions_created"] = len(data.get("test_sessions", []))
+            else:
+                stats["test_sessions_created"] = len([s for s in data.get("test_sessions", []) 
+                                                   if s.get("created_by") == user["email"]])
+        
+        return stats
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения статистики: {e}")
+        return {}
 
 # === ЗАПУСК СЕРВЕРА ===
 

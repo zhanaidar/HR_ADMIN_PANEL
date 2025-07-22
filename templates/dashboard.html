@@ -249,6 +249,7 @@
         .stat-icon.blue { background: #EFF6FF; color: #3B82F6; }
         .stat-icon.yellow { background: #FFFBEB; color: #F59E0B; }
         .stat-icon.red { background: #FEF2F2; color: #EF4444; }
+        .stat-icon.purple { background: #F3E8FF; color: #8B5CF6; }
         
         .stat-value {
             font-size: 2rem;
@@ -314,6 +315,15 @@
         .action-card.disabled:hover {
             border-color: #E5E7EB;
             background: white;
+        }
+        
+        .action-card.tests {
+            border-color: #8B5CF6;
+        }
+        
+        .action-card.tests:hover {
+            border-color: #7C3AED;
+            background: #F3E8FF;
         }
         
         .action-icon {
@@ -482,6 +492,16 @@
                 <div class="stat-value">{{ stats.questions_generated or 0 }}</div>
                 <div class="stat-change">Полностью готовы</div>
             </div>
+            
+            <!-- Новая карточка статистики для тест-сессий -->
+            <div class="stat-card">
+                <div class="stat-header">
+                    <div class="stat-title">Тест-сессии</div>
+                    <div class="stat-icon purple">📋</div>
+                </div>
+                <div class="stat-value">{{ stats.test_sessions_created or 0 }}</div>
+                <div class="stat-change">Созданы для кандидатов</div>
+            </div>
         </div>
         
         <!-- Quick Actions -->
@@ -495,6 +515,21 @@
                     <div class="action-title">Создать профессию</div>
                     <div class="action-description">Создайте новую профессию с помощью ИИ анализа</div>
                 </a>
+                {% endif %}
+                
+                <!-- Новая кнопка создания теста для кандидата -->
+                {% if can_view_questions or can_create %}
+                <a href="/create-candidate-test" class="action-card tests">
+                    <div class="action-icon">👤</div>
+                    <div class="action-title">Создать тест для кандидата</div>
+                    <div class="action-description">Создайте персональный тест с уникальной ссылкой</div>
+                </a>
+                {% else %}
+                <div class="action-card disabled tests">
+                    <div class="action-icon">👤</div>
+                    <div class="action-title">Создать тест для кандидата</div>
+                    <div class="action-description">Доступно после создания профессий с вопросами</div>
+                </div>
                 {% endif %}
                 
                 {% if can_approve %}
@@ -519,8 +554,17 @@
                 </div>
                 {% endif %}
                 
-                <a href="#" class="action-card" onclick="showComingSoon()">
+                <!-- Новая кнопка управления тест-сессиями -->
+                {% if can_view_questions %}
+                <a href="/manage-test-sessions" class="action-card tests">
                     <div class="action-icon">📊</div>
+                    <div class="action-title">Управление тестами</div>
+                    <div class="action-description">Просмотр созданных тестов и результатов кандидатов</div>
+                </a>
+                {% endif %}
+                
+                <a href="#" class="action-card" onclick="showComingSoon()">
+                    <div class="action-icon">📈</div>
                     <div class="action-title">Аналитика</div>
                     <div class="action-description">Статистика и отчеты по профессиям</div>
                 </a>
@@ -532,7 +576,7 @@
                 </a>
                 
                 <a href="#" class="action-card" onclick="showComingSoon()">
-                    <div class="action-icon">📝</div>
+                    <div class="action-icon">📋</div>
                     <div class="action-title">Отчеты</div>
                     <div class="action-description">Экспорт данных и создание отчетов</div>
                 </a>
