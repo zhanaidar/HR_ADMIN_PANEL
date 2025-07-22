@@ -768,6 +768,7 @@
             showEmptyState(filteredSessions.length === 0);
         }
         
+
         // Отображение таблицы (desktop)
         function renderDesktopTable() {
             const tbody = document.getElementById('sessions-table-body');
@@ -780,6 +781,26 @@
             tbody.innerHTML = filteredSessions.map(session => {
                 const candidate = session.candidate || {};
                 const profession = session.profession || {};
+                const results = session.results || {};
+                
+                // Формируем ячейку результатов
+                let resultsCell = '';
+                if (session.status === 'completed' && results.grade) {
+                    const gradeColor = getGradeColor(results.grade);
+                    resultsCell = `
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="grade-badge" style="background: ${gradeColor}; color: white; padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 1.1rem;">
+                                ${results.grade}
+                            </div>
+                            <div style="font-size: 0.9rem; color: #6B7280;">
+                                ${results.percentage}%<br>
+                                <span style="font-size: 0.8rem;">${results.correct_answers}/${results.total_questions}</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultsCell = `<span class="status-badge status-${session.status}">${getStatusDisplayName(session.status)}</span>`;
+                }
                 
                 return `
                     <tr>
@@ -802,9 +823,7 @@
                             <div style="font-size: 0.8rem; color: #6B7280;">${formatTime(session.created_at)}</div>
                         </td>
                         <td>
-                            <span class="status-badge status-${session.status}">
-                                ${getStatusDisplayName(session.status)}
-                            </span>
+                            ${resultsCell}
                         </td>
                         <td>
                             <div class="test-url" title="${session.test_url}">
@@ -846,6 +865,30 @@
             container.innerHTML = filteredSessions.map(session => {
                 const candidate = session.candidate || {};
                 const profession = session.profession || {};
+                const results = session.results || {};
+                
+                // Формируем блок результатов для мобильной версии
+                let resultsBlock = '';
+                if (session.status === 'completed' && results.grade) {
+                    const gradeColor = getGradeColor(results.grade);
+                    resultsBlock = `
+                        <div style="display: flex; align-items: center; gap: 15px; justify-content: center; margin: 10px 0;">
+                            <div class="grade-badge" style="background: ${gradeColor}; color: white; padding: 8px 12px; border-radius: 8px; font-weight: 700; font-size: 1.5rem;">
+                                ${results.grade}
+                            </div>
+                            <div>
+                                <div style="font-weight: 600; color: #2C3E50;">${results.percentage}%</div>
+                                <div style="font-size: 0.8rem; color: #6B7280;">${results.correct_answers}/${results.total_questions} правильных</div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultsBlock = `
+                        <div style="text-align: center; margin: 10px 0;">
+                            <span class="status-badge status-${session.status}">${getStatusDisplayName(session.status)}</span>
+                        </div>
+                    `;
+                }
                 
                 return `
                     <div class="session-card">
@@ -857,10 +900,9 @@
                                     ${getLevelDisplayName(session.level)}
                                 </span>
                             </div>
-                            <span class="status-badge status-${session.status}">
-                                ${getStatusDisplayName(session.status)}
-                            </span>
                         </div>
+                        
+                        ${resultsBlock}
                         
                         <div class="session-info">
                             <div class="info-item">
@@ -872,6 +914,7 @@
                                 <div class="info-label">Вопросов</div>
                             </div>
                         </div>
+                        
                         <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
                             <button class="btn btn-copy" onclick="copyTestUrl('${session.test_url}')">
                                 📋 Копировать ссылку
@@ -1117,6 +1160,60 @@
 
         function showAnswersModal(data) {
             const { test_session, answers_details } = data;
+            const results = test_session.results || {};
+            
+            // Формируем заголовок с оценкой
+            let headerHTML = `
+                <div class="modal-header" style="margin-bottom: 20px; text-align: center;">
+                    <h2 style="color: #8B5CF6; margin: 0 0 15px 0;">📋 Ответы кандидата</h2>
+                    <p style="margin: 0 0 10px 0; color: #6B7280;">
+                        <strong>${test_session.candidate.full_name}</strong><br>
+                        ${test_session.profession.name} (${test_session.level})
+                    </p>
+            `;
+            
+            if (results.grade) {
+                const gradeColor = getGradeColor(results.grade);
+                headerHTML += `
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 20px; margin: 20px 0; padding: 20px; background: #f8fafc; border-radius: 12px;">
+                        <div class="grade-display" style="text-align: center;">
+                            <div style="font-size: 4rem; font-weight: 900; color: ${gradeColor}; line-height: 1;">${results.grade}</div>
+                            <div style="font-size: 1.2rem; font-weight: 600; color: ${gradeColor};">${results.grade_text}</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 2rem; font-weight: 700; color: #2D3748;">${results.percentage}%</div>
+                            <div style="color: #6B7280; margin-top: 5px;">
+                                ${results.correct_answers}/${results.total_questions} правильных<br>
+                                <span style="font-size: 0.9rem;">Время: ${Math.floor((test_session.time_spent || 0) / 60)}м</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Добавляем разбивку по категориям если есть
+                if (results.category_breakdown && Object.keys(results.category_breakdown).length > 0) {
+                    headerHTML += `
+                        <div style="margin: 20px 0;">
+                            <h4 style="color: #2D3748; margin-bottom: 15px; text-align: center;">📊 Результаты по областям</h4>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+                    `;
+                    
+                    Object.entries(results.category_breakdown).forEach(([categoryName, data]) => {
+                        const categoryGradeColor = getGradeColor(data.grade);
+                        headerHTML += `
+                            <div style="background: white; border: 2px solid ${categoryGradeColor}; border-radius: 8px; padding: 10px; text-align: center; min-width: 120px;">
+                                <div style="font-weight: 600; color: #2D3748; font-size: 0.9rem;">${categoryName}</div>
+                                <div style="color: ${categoryGradeColor}; font-weight: 700; font-size: 1.1rem;">${data.grade}</div>
+                                <div style="color: #6B7280; font-size: 0.8rem;">${data.percentage}%</div>
+                            </div>
+                        `;
+                    });
+                    
+                    headerHTML += '</div></div>';
+                }
+            }
+            
+            headerHTML += '</div>';
             
             let modalHTML = `
                 <div class="modal-overlay" onclick="closeAnswersModal()" style="
@@ -1125,18 +1222,10 @@
                     align-items: center; justify-content: center;">
                     
                     <div class="modal-content" onclick="event.stopPropagation()" style="
-                        background: white; border-radius: 15px; max-width: 800px; 
+                        background: white; border-radius: 15px; max-width: 900px; 
                         max-height: 90vh; overflow-y: auto; padding: 30px; margin: 20px;">
                         
-                        <div class="modal-header" style="margin-bottom: 20px; text-align: center;">
-                            <h2 style="color: #8B5CF6; margin: 0;">📋 Ответы кандидата</h2>
-                            <p style="margin: 10px 0; color: #6B7280;">
-                                <strong>${test_session.candidate.full_name}</strong><br>
-                                ${test_session.profession.name} (${test_session.level})<br>
-                                Результат: ${test_session.results.correct_answers}/${test_session.results.total_questions} 
-                                (${test_session.results.percentage}%)
-                            </p>
-                        </div>
+                        ${headerHTML}
                         
                         <div class="answers-list">`;
             
@@ -1197,6 +1286,17 @@
             if (modal) {
                 modal.remove();
             }
+        }
+
+        function getGradeColor(grade) {
+            const colors = {
+                'A': '#1DB584',
+                'B': '#059669', 
+                'C': '#F59E0B',
+                'D': '#F97316',
+                'F': '#EF4444'
+            };
+            return colors[grade] || '#EF4444';
         }
 
     </script>

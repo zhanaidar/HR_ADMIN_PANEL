@@ -2169,10 +2169,12 @@ async def create_test_session(test_data: Dict[str, Any], profession: Dict[str, A
 def select_questions_by_level_and_tags(profession: Dict[str, Any], level: str, total_questions: int = 15) -> List[Dict[str, Any]]:
     """Отбор вопросов по уровню и весам тегов"""
     try:
+        print(f"🔍 ОТЛАДКА: Выбор вопросов для {profession.get('real_name')} уровня {level}")
+        
         # 1. Определяем сложность по уровню
         difficulty_map = {
             "junior": "easy",
-            "middle": "medium", 
+            "middle": "medium",
             "senior": "hard"
         }
         target_difficulty = difficulty_map.get(level, "medium")
@@ -2181,6 +2183,8 @@ def select_questions_by_level_and_tags(profession: Dict[str, Any], level: str, t
         all_questions = profession.get("questions", [])
         questions_by_difficulty = [q for q in all_questions 
                                  if q.get("difficulty") == target_difficulty]
+        
+        print(f"🔍 ОТЛАДКА: Найдено {len(questions_by_difficulty)} вопросов сложности {target_difficulty}")
         
         if len(questions_by_difficulty) < total_questions:
             logger.warning(f"⚠️ Недостаточно вопросов уровня {target_difficulty}: {len(questions_by_difficulty)} из {total_questions}")
@@ -2192,6 +2196,7 @@ def select_questions_by_level_and_tags(profession: Dict[str, Any], level: str, t
             if not tags_weights:
                 # Если нет весов, берем случайные вопросы
                 selected_questions = random.sample(questions_by_difficulty, total_questions)
+                print(f"🔍 ОТЛАДКА: Выбрано случайно (без тегов)")
             else:
                 selected_questions = distribute_questions_by_tags(
                     questions_by_difficulty, 
@@ -2203,16 +2208,31 @@ def select_questions_by_level_and_tags(profession: Dict[str, Any], level: str, t
         random.shuffle(selected_questions)
         
         # 5. Убираем лишнее (если вдруг получилось больше)
-        return selected_questions[:total_questions]
+        final_questions = selected_questions[:total_questions]
+        
+        # ОТЛАДКА: Проверяем дубликаты
+        print(f"🔍 ОТЛАДКА: Выбрано {len(final_questions)} вопросов")
+        question_ids = [q.get('id', 'no-id') for q in final_questions]
+        unique_ids = set(question_ids)
+        print(f"🔍 ОТЛАДКА: Уникальных ID: {len(unique_ids)}")
+        
+        if len(question_ids) != len(unique_ids):
+            print(f"🚨 ДУБЛИКАТЫ НАЙДЕНЫ!")
+            duplicates = [qid for qid in question_ids if question_ids.count(qid) > 1]
+            print(f"🚨 Дублирующиеся ID: {set(duplicates)}")
+        
+        return final_questions
         
     except Exception as e:
         logger.error(f"❌ Ошибка отбора вопросов: {e}")
         return []
 
 def distribute_questions_by_tags(questions: List[Dict[str, Any]], tags_weights: Dict[str, int], total_questions: int) -> List[Dict[str, Any]]:
-    """Распределение вопросов по тегам пропорционально весам"""
+    """Умное распределение вопросов по тегам с минимизацией искажений пропорций"""
     try:
-        # Группируем вопросы по тегам
+        print(f"🧠 УМНОЕ РАСПРЕДЕЛЕНИЕ: {len(questions)} вопросов на {total_questions} мест")
+        
+        # 1. Группируем вопросы по тегам
         questions_by_tag = {}
         for question in questions:
             tag = question.get("tag", "General")
@@ -2220,44 +2240,82 @@ def distribute_questions_by_tags(questions: List[Dict[str, Any]], tags_weights: 
                 questions_by_tag[tag] = []
             questions_by_tag[tag].append(question)
         
-        # Рассчитываем пропорциональное распределение
+        # 2. Рассчитываем идеальные пропорции (float)
         total_weight = sum(tags_weights.values())
+        ideal_counts = {}
+        for tag, weight in tags_weights.items():
+            if tag in questions_by_tag:
+                ideal_count = (weight / total_weight) * total_questions
+                ideal_counts[tag] = ideal_count
+                print(f"📊 {tag}: идеально {ideal_count:.2f}")
+        
+        # 3. Округляем до целых чисел
+        tag_counts = {tag: round(ideal) for tag, ideal in ideal_counts.items()}
+        print(f"🔄 После округления: {tag_counts} (сумма: {sum(tag_counts.values())})")
+        
+        # 4. УМНАЯ КОРРЕКЦИЯ по отклонениям от пропорций
+        while sum(tag_counts.values()) != total_questions:
+            current_sum = sum(tag_counts.values())
+            
+            # Считаем отклонения (фактическое - идеальное)  
+            differences = {tag: tag_counts[tag] - ideal_counts[tag] 
+                          for tag in tag_counts}
+            
+            if current_sum > total_questions:
+                # Нужно убрать: ищем тег с наибольшим перебором
+                tag_to_reduce = max(differences.keys(), key=lambda x: differences[x])
+                if tag_counts[tag_to_reduce] > 0:  # Не уходим в минус
+                    tag_counts[tag_to_reduce] -= 1
+                    print(f"➖ Убрали 1 вопрос у '{tag_to_reduce}' (перебор: {differences[tag_to_reduce]:.2f})")
+                else:
+                    break
+            else:
+                # Нужно добавить: ищем тег с наибольшим недобором
+                tag_to_increase = min(differences.keys(), key=lambda x: differences[x])
+                max_available = len(questions_by_tag.get(tag_to_increase, []))
+                if tag_counts[tag_to_increase] < max_available:  # Не превышаем доступное количество
+                    tag_counts[tag_to_increase] += 1
+                    print(f"➕ Добавили 1 вопрос к '{tag_to_increase}' (недобор: {differences[tag_to_increase]:.2f})")
+                else:
+                    break
+        
+        print(f"✅ Финальное распределение: {tag_counts} (сумма: {sum(tag_counts.values())})")
+        
+        # 5. Выбираем уникальные вопросы согласно плану
         selected_questions = []
-        remaining_questions = total_questions
+        used_question_ids = set()
         
-        # Сортируем теги по весу (от большего к меньшему)
-        sorted_tags = sorted(tags_weights.items(), key=lambda x: x[1], reverse=True)
+        for tag, count in tag_counts.items():
+            if count > 0 and tag in questions_by_tag:
+                available_questions = [
+                    q for q in questions_by_tag[tag] 
+                    if q.get("id") not in used_question_ids
+                ]
+                
+                if available_questions:
+                    actual_count = min(count, len(available_questions))
+                    tag_questions = random.sample(available_questions, actual_count)
+                    selected_questions.extend(tag_questions)
+                    
+                    # Помечаем как использованные
+                    for q in tag_questions:
+                        used_question_ids.add(q.get("id"))
+                    
+                    print(f"🏷️ '{tag}': выбрано {actual_count} из {len(available_questions)} доступных")
         
-        for tag, weight in sorted_tags:
-            if remaining_questions <= 0 or tag not in questions_by_tag:
-                continue
-            
-            # Пропорциональное количество вопросов для этого тега
-            questions_count = round((weight / total_weight) * total_questions)
-            questions_count = min(questions_count, remaining_questions)
-            questions_count = min(questions_count, len(questions_by_tag[tag]))
-            questions_count = max(1 if remaining_questions > 0 else 0, questions_count)  # минимум 1 вопрос
-            
-            if questions_count > 0:
-                # Отбираем случайные вопросы этого тега
-                tag_questions = random.sample(questions_by_tag[tag], questions_count)
-                selected_questions.extend(tag_questions)
-                remaining_questions -= questions_count
+        # Финальная проверка на дубликаты
+        question_ids = [q.get("id") for q in selected_questions]
+        unique_ids = set(question_ids)
         
-        # Если остались нераспределенные вопросы, добираем случайными
-        if remaining_questions > 0:
-            used_questions = set(q.get("id") for q in selected_questions)
-            available_questions = [q for q in questions if q.get("id") not in used_questions]
-            
-            if available_questions:
-                additional_count = min(remaining_questions, len(available_questions))
-                additional_questions = random.sample(available_questions, additional_count)
-                selected_questions.extend(additional_questions)
+        if len(question_ids) != len(unique_ids):
+            print(f"🚨 ОШИБКА: найдены дубликаты! {len(question_ids)} вопросов, {len(unique_ids)} уникальных")
+        else:
+            print(f"✅ ВСЕ УНИКАЛЬНО: {len(selected_questions)} вопросов выбрано")
         
         return selected_questions
         
     except Exception as e:
-        logger.error(f"❌ Ошибка распределения вопросов по тегам: {e}")
+        logger.error(f"❌ Ошибка умного распределения: {e}")
         return random.sample(questions, min(total_questions, len(questions)))
 
 def get_all_test_sessions() -> Dict[str, Any]:
