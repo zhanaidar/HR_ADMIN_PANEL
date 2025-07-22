@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Управление генерацией вопросов - HR Admin Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: #f8fafc; 
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background: white;
+            border-bottom: 1px solid #E5E7EB;
+            padding: 15px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #1DB584;
+        }
+        
+        .breadcrumb {
+            color: #6B7280;
+            font-size: 0.9rem;
+        }
+        
+        .breadcrumb a {
+            color: #1DB584;
+            text-decoration: none;
+        }
+        
+        .user-info {
+            font-size: 0.9rem;
+            color: #6B7280;
+        }
+        
+        /* Main Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .page-header {
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .page-title {
+            color: #2C3E50;
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+        
+        .page-subtitle {
+            color: #6B7280;
+            font-size: 1.1rem;
+        }
+        
+        /* Tabs */
+        .tabs-container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            overflow: hidden;
+            margin-bottom: 30px;
+        }
+        
+        .tabs-header {
+            display: flex;
+            background: #F8FAFC;
+            border-bottom: 1px solid #E5E7EB;
+        }
+        
+        .tab-button {
+            flex: 1;
+            padding: 20px;
+            background: none;
+            border: none;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #6B7280;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .tab-button.active {
+            color: #1DB584;
+            background: white;
+        }
+        
+        .tab-button.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: #1DB584;
+        }
+        
+        .tab-badge {
+            background: #EF4444;
+            color: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        
+        .tab-badge.success {
+            background: #10B981;
+        }
+        
+        .tab-content {
+            padding: 30px;
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* Table Styles */
+        .professions-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .professions-table th {
+            background: #F9FAFB;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #374151;
+            font-size: 0.9rem;
+            border-bottom: 2px solid #E5E7EB;
+        }
+        
+        .professions-table td {
+            padding: 20px 15px;
+            border-bottom: 1px solid #F3F4F6;
+            vertical-align: middle;
+        }
+        
+        .professions-table tr:hover {
+            background: #F9FAFB;
+        }
+        
+        .profession-info {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .profession-name {
+            font-weight: 600;
+            color: #2C3E50;
+            font-size: 1rem;
+        }
+        
+        .profession-spec {
+            color: #6B7280;
+            font-size: 0.9rem;
+        }
+        
+        .profession-id {
+            color: #9CA3AF;
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+        
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .status-ready {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+        
+        .status-pending {
+            background: #FEF3C7;
+            color: #92400E;
+        }
+        
+        .status-generating {
+            background: #DBEAFE;
+            color: #1E40AF;
+        }
+        
+        .questions-count {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1DB584;
+            text-align: center;
+        }
+        
+        .questions-breakdown {
+            font-size: 0.8rem;
+            color: #6B7280;
+            text-align: center;
+            margin-top: 5px;
+        }
+        
+        .expected-count {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #F59E0B;
+            text-align: center;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-danger {
+            background: #FEE2E2;
+            color: #DC2626;
+            border: 1px solid #FECACA;
+        }
+        
+        .btn-danger:hover {
+            background: #FEF2F2;
+            transform: translateY(-1px);
+        }
+        
+        .btn-success {
+            background: #D1FAE5;
+            color: #065F46;
+            border: 1px solid #A7F3D0;
+        }
+        
+        .btn-success:hover {
+            background: #ECFDF5;
+            transform: translateY(-1px);
+        }
+        
+        .btn-primary {
+            background: #1DB584;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #159A73;
+            transform: translateY(-1px);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* Progress Bar */
+        .progress-container {
+            margin: 15px 0;
+            display: none;
+        }
+        
+        .progress-container.active {
+            display: block;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #E5E7EB;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #1DB584, #10B981);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+        
+        .progress-text {
+            font-size: 0.8rem;
+            color: #6B7280;
+            margin-top: 5px;
+            text-align: center;
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 15px;
+            padding: 0;
+            max-width: 500px;
+            width: 90%;
+            animation: slideInUp 0.3s ease;
+        }
+        
+        .modal-header {
+            padding: 25px 30px 20px;
+            border-bottom: 1px solid #E5E7EB;
+        }
+        
+        .modal-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #2C3E50;
+            margin-bottom: 10px;
+        }
+        
+        .modal-subtitle {
+            color: #6B7280;
+            font-size: 0.9rem;
+        }
+        
+        .modal-body {
+            padding: 25px 30px;
+        }
+        
+        .modal-info {
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .modal-info-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+        
+        .modal-info-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .modal-info-label {
+            color: #6B7280;
+            font-weight: 500;
+        }
+        
+        .modal-info-value {
+            color: #2C3E50;
+            font-weight: 600;
+        }
+        
+        .modal-warning {
+            background: #FEF3C7;
+            border: 1px solid #F59E0B;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #92400E;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: flex-end;
+            padding: 20px 30px 25px;
+            border-top: 1px solid #E5E7EB;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+        
+        .empty-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #2C3E50;
+            margin-bottom: 10px;
+        }
+        
+        .empty-text {
+            color: #6B7280;
+            font-size: 1rem;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px 15px;
+            }
+            
+            .tabs-header {
+                flex-direction: column;
+            }
+            
+            .professions-table {
+                font-size: 0.9rem;
+            }
+            
+            .professions-table th,
+            .professions-table td {
+                padding: 10px;
+            }
+            
+            .modal-content {
+                margin: 20px;
+                width: auto;
+            }
+        }
+        
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideInUp {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.6s ease-out;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">🏦 HR Admin Panel</div>
+            <div class="breadcrumb">
+                <a href="/dashboard">Дашборд</a> / 
+                <a href="/questions">Вопросы</a> / 
+                Управление генерацией
+            </div>
+            <div class="user-info">{{ user.name }} ({{ user_role_name }})</div>
+        </div>
+    </header>
+    
+    <!-- Main Content -->
+    <div class="container">
+        <!-- Page Header -->
+        <div class="page-header fade-in">
+            <h1 class="page-title">
+                🎛️ Управление генерацией вопросов
+            </h1>
+            <p class="page-subtitle">Создание и управление тестовыми вопросами по профессиям и специализациям</p>
+        </div>
+        
+        <!-- Tabs Container -->
+        <div class="tabs-container fade-in">
+            <!-- Tabs Header -->
+            <div class="tabs-header">
+                <button class="tab-button active" onclick="switchTab('ready')">
+                    ✅ Готовые вопросы
+                    <span class="tab-badge success" id="readyCount">0</span>
+                </button>
+                <button class="tab-button" onclick="switchTab('pending')">
+                    ⏳ Ожидают генерации
+                    <span class="tab-badge" id="pendingCount">0</span>
+                </button>
+            </div>
+            
+            <!-- Ready Questions Tab -->
+            <div class="tab-content active" id="readyTab">
+                <div id="readyContent">
+                    <!-- Заполнится JavaScript -->
+                </div>
+            </div>
+            
+            <!-- Pending Generation Tab -->
+            <div class="tab-content" id="pendingTab">
+                <div id="pendingContent">
+                    <!-- Заполнится JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div class="modal" id="deleteModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">🗑️ Удаление вопросов</h2>
+                <p class="modal-subtitle">Подтвердите удаление всех вопросов</p>
+            </div>
+            
+            <div class="modal-body">
+                <div class="modal-info" id="deleteInfo">
+                    <!-- Заполнится JavaScript -->
+                </div>
+                
+                <div class="modal-warning">
+                    ⚠️ Это действие нельзя отменить! Все вопросы будут безвозвратно удалены.
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeDeleteModal()">❌ Отмена</button>
+                <button class="btn btn-danger" onclick="confirmDelete()">🗑️ Да, удалить</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Generate Confirmation Modal -->
+    <div class="modal" id="generateModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">🤖 Генерация вопросов</h2>
+                <p class="modal-subtitle">Подтвердите запуск генерации</p>
+            </div>
+            
+            <div class="modal-body">
+                <div class="modal-info" id="generateInfo">
+                    <!-- Заполнится JavaScript -->
+                </div>
+                
+                <div class="progress-container" id="generateProgress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">Подготовка к генерации...</div>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeGenerateModal()" id="cancelGenerate">❌ Отмена</button>
+                <button class="btn btn-primary" onclick="confirmGenerate()" id="startGenerate">▶️ Да, генерировать</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentData = { ready: [], pending: [] };
+        let currentDeleteKey = null;
+        let currentGenerateKey = null;
+        let generationInProgress = false;
+        
+        // WebSocket для отслеживания прогресса
+        let progressWS = null;
+        
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            loadQuestionsOverview();
+            
+            // Анимация загрузки
+            const elements = document.querySelectorAll('.fade-in');
+            elements.forEach((el, index) => {
+                el.style.animationDelay = `${index * 0.1}s`;
+            });
+        });
+        
+        // Загрузка данных
+        async function loadQuestionsOverview() {
+            try {
+                const response = await fetch('/api/questions-overview');
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentData = data;
+                    updateTabCounts();
+                    renderReadyQuestions();
+                    renderPendingQuestions();
+                } else {
+                    console.error('Ошибка загрузки:', data.error);
+                }
+            } catch (error) {
+                console.error('Ошибка запроса:', error);
+            }
+        }
+        
+        // Обновление счетчиков вкладок
+        function updateTabCounts() {
+            document.getElementById('readyCount').textContent = currentData.ready.length;
+            document.getElementById('pendingCount').textContent = currentData.pending.length;
+        }
+        
+        // Переключение вкладок
+        function switchTab(tabName) {
+            // Обновляем кнопки
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // Активируем нужную вкладку
+            event.target.classList.add('active');
+            document.getElementById(tabName + 'Tab').classList.add('active');
+        }
+        
+        // Рендер готовых вопросов
+        function renderReadyQuestions() {
+            const container = document.getElementById('readyContent');
+            
+            if (currentData.ready.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">❓</div>
+                        <h3 class="empty-title">Нет готовых вопросов</h3>
+                        <p class="empty-text">Вопросы появятся после генерации для утвержденных профессий</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = `
+                <table class="professions-table">
+                    <thead>
+                        <tr>
+                            <th>Профессия и специализация</th>
+                            <th>Статус</th>
+                            <th>Количество вопросов</th>
+                            <th>Последнее обновление</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            currentData.ready.forEach(item => {
+                html += `
+                    <tr>
+                        <td>
+                            <div class="profession-info">
+                                <div class="profession-name">${item.profession}</div>
+                                <div class="profession-spec">${item.specialization || 'Общая'}</div>
+                                <div class="profession-id">ID: ${item.profession_id}</div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="status-badge status-ready">✅ Готов</span>
+                        </td>
+                        <td>
+                            <div class="questions-count">${item.questions_count}</div>
+                            <div class="questions-breakdown">
+                                Easy: ${item.breakdown?.easy || 0} | 
+                                Medium: ${item.breakdown?.medium || 0} | 
+                                Hard: ${item.breakdown?.hard || 0}
+                            </div>
+                        </td>
+                        <td style="font-size: 0.9rem; color: #6B7280;">
+                            ${item.updated_at ? new Date(item.updated_at).toLocaleString('ru-RU') : 'Неизвестно'}
+                        </td>
+                        <td>
+                            <button class="btn btn-danger" onclick="openDeleteModal('${item.profession_key}', '${item.profession}', '${item.specialization}', ${item.questions_count})">
+                                🗑️ Удалить
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                    </tbody>
+                </table>
+            `;
+            
+            container.innerHTML = html;
+        }
+        
+        // Рендер ожидающих генерации
+        function renderPendingQuestions() {
+            const container = document.getElementById('pendingContent');
+            
+            if (currentData.pending.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">✅</div>
+                        <h3 class="empty-title">Все профессии обработаны</h3>
+                        <p class="empty-text">Нет профессий ожидающих генерации вопросов</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = `
+                <table class="professions-table">
+                    <thead>
+                        <tr>
+                            <th>Профессия и специализация</th>
+                            <th>Статус</th>
+                            <th>Ожидаемо вопросов</th>
+                            <th>Теги для обработки</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            currentData.pending.forEach(item => {
+                const isGenerating = item.status === 'generating';
+                html += `
+                    <tr>
+                        <td>
+                            <div class="profession-info">
+                                <div class="profession-name">${item.profession}</div>
+                                <div class="profession-spec">${item.specialization || 'Общая'}</div>
+                                <div class="profession-id">ID: ${item.profession_id}</div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="status-badge ${isGenerating ? 'status-generating' : 'status-pending'}">
+                                ${isGenerating ? '🤖 Генерируется' : '⏳ Ожидает'}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="expected-count">${item.expected_questions}</div>
+                            <div class="questions-breakdown">
+                                Базируется на ${item.tags_count} тегах
+                            </div>
+                        </td>
+                        <td style="font-size: 0.9rem; color: #6B7280;">
+                            ${item.top_tags ? item.top_tags.join(', ') : 'Загрузка...'}
+                        </td>
+                        <td>
+                            <button class="btn btn-success" 
+                                    onclick="openGenerateModal('${item.profession_key}', '${item.profession}', '${item.specialization}', '${item.expected_questions}', ${item.tags_count})"
+                                    ${isGenerating ? 'disabled' : ''}>
+                                ${isGenerating ? '⏳ Генерируется...' : '▶️ Генерировать'}
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                    </tbody>
+                </table>
+            `;
+            
+            container.innerHTML = html;
+        }
+        
+        // Модальное окно удаления
+        function openDeleteModal(professionKey, profession, specialization, questionsCount) {
+            currentDeleteKey = professionKey;
+            
+            document.getElementById('deleteInfo').innerHTML = `
+                <div class="modal-info-item">
+                    <span class="modal-info-label">📋 Профессия:</span>
+                    <span class="modal-info-value">${profession}</span>
+                </div>
+                <div class="modal-info-item">
+                    <span class="modal-info-label">🎯 Специализация:</span>
+                    <span class="modal-info-value">${specialization || 'Общая'}</span>
+                </div>
+                <div class="modal-info-item">
+                    <span class="modal-info-label">📊 Количество вопросов:</span>
+                    <span class="modal-info-value">${questionsCount}</span>
+                </div>
+            `;
+            
+            document.getElementById('deleteModal').classList.add('active');
+        }
+        
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('active');
+            currentDeleteKey = null;
+        }
+        
+        // Модальное окно генерации
+        function openGenerateModal(professionKey, profession, specialization, expectedQuestions, tagsCount) {
+            currentGenerateKey = professionKey;
+            
+            document.getElementById('generateInfo').innerHTML = `
+                <div class="modal-info-item">
+                    <span class="modal-info-label">📋 Профессия:</span>
+                    <span class="modal-info-value">${profession}</span>
+                </div>
+                <div class="modal-info-item">
+                    <span class="modal-info-label">🎯 Специализация:</span>
+                    <span class="modal-info-value">${specialization || 'Общая'}</span>
+                </div>
+                <div class="modal-info-item">
+                    <span class="modal-info-label">⏱️ Ожидаемое время:</span>
+                    <span class="modal-info-value">~${Math.ceil(tagsCount * 2)} минут</span>
+                </div>
+                <div class="modal-info-item">
+                    <span class="modal-info-label">📊 Ожидаемо вопросов:</span>
+                    <span class="modal-info-value">${expectedQuestions}</span>
+                </div>
+                <div class="modal-info-item">
+                    <span class="modal-info-label">🏷️ Тегов для обработки:</span>
+                    <span class="modal-info-value">${tagsCount}</span>
+                </div>
+            `;
+            
+            document.getElementById('generateModal').classList.add('active');
+        }
+        
+        function closeGenerateModal() {
+            if (!generationInProgress) {
+                document.getElementById('generateModal').classList.remove('active');
+                currentGenerateKey = null;
+            }
+        }
+        
+        // Подтверждение удаления
+        async function confirmDelete() {
+            if (!currentDeleteKey) return;
+            
+            try {
+                const response = await fetch(`/api/questions/${encodeURIComponent(currentDeleteKey)}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('✅ Вопросы успешно удалены!');
+                    closeDeleteModal();
+                    loadQuestionsOverview(); // Перезагружаем данные
+                } else {
+                    alert('❌ Ошибка удаления: ' + result.error);
+                }
+            } catch (error) {
+                alert('❌ Ошибка запроса: ' + error.message);
+            }
+        }
+        
+        // Подтверждение генерации
+        async function confirmGenerate() {
+            if (!currentGenerateKey || generationInProgress) return;
+            
+            generationInProgress = true;
+            
+            // Показываем прогресс-бар и меняем кнопки
+            document.getElementById('generateProgress').classList.add('active');
+            document.getElementById('startGenerate').disabled = true;
+            document.getElementById('startGenerate').innerHTML = '⏳ Генерируется...';
+            document.getElementById('cancelGenerate').style.display = 'none';
+            
+            try {
+                const response = await fetch(`/api/generate-single/${encodeURIComponent(currentGenerateKey)}`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Имитируем прогресс (в реальности нужен WebSocket)
+                    simulateProgress();
+                } else {
+                    alert('❌ Ошибка генерации: ' + result.error);
+                    resetGenerateModal();
+                }
+            } catch (error) {
+                alert('❌ Ошибка запроса: ' + error.message);
+                resetGenerateModal();
+            }
+        }
+        
+        // Имитация прогресса (замените на реальный WebSocket)
+        function simulateProgress() {
+            let progress = 0;
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            
+            const interval = setInterval(() => {
+                progress += Math.random() * 10;
+                if (progress >= 100) {
+                    progress = 100;
+                    clearInterval(interval);
+                    
+                    setTimeout(() => {
+                        alert('✅ Вопросы успешно сгенерированы!');
+                        resetGenerateModal();
+                        loadQuestionsOverview(); // Перезагружаем данные
+                    }, 500);
+                }
+                
+                progressFill.style.width = progress + '%';
+                progressText.textContent = `Прогресс: ${Math.round(progress)}%`;
+            }, 1000);
+        }
+        
+        function resetGenerateModal() {
+            generationInProgress = false;
+            document.getElementById('generateProgress').classList.remove('active');
+            document.getElementById('startGenerate').disabled = false;
+            document.getElementById('startGenerate').innerHTML = '▶️ Да, генерировать';
+            document.getElementById('cancelGenerate').style.display = 'inline-block';
+            document.getElementById('progressFill').style.width = '0%';
+            closeGenerateModal();
+        }
+        
+        // Закрытие модальных окон по клику вне них
+        document.getElementById('deleteModal').addEventListener('click', function(e) {
+            if (e.target === this) closeDeleteModal();
+        });
+        
+        document.getElementById('generateModal').addEventListener('click', function(e) {
+            if (e.target === this && !generationInProgress) closeGenerateModal();
+        });
+    </script>
+</body>
+</html>

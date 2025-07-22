@@ -522,6 +522,333 @@ async def generate_questions_manual(profession_id: str, request: Request):
         logger.error(f"❌ Ошибка генерации вопросов для {profession_id}: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
+
+
+# === УПРАВЛЕНИЕ ГЕНЕРАЦИЕЙ ВОПРОСОВ ===
+
+@app.get("/questions-management", response_class=HTMLResponse)
+async def questions_management_page(request: Request):
+    """Страница управления генерацией вопросов - только для супер админа"""
+    user = request.session.get("user")
+    if not user:
+        return RedirectResponse(url="/login")
+    
+    # Только супер админ может управлять вопросами
+    if user["role"] != "super_admin":
+        return templates.TemplateResponse("access_denied.html", {
+            "request": request,
+            "user": user,
+            "user_role_name": get_user_role_name(user["role"]),
+            "message": "Управление генерацией вопросов доступно только супер администратору",
+            "allowed_roles": ["super_admin"]
+        })
+    
+    return templates.TemplateResponse("questions_management.html", {
+        "request": request,
+        "user": user,
+        "user_role_name": get_user_role_name(user["role"])
+    })
+
+@app.get("/api/questions-overview")
+async def get_questions_overview(request: Request):
+    """Получение обзора всех профессий с вопросами"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    if user["role"] != "super_admin":
+        return JSONResponse({"error": "Доступ запрещен"}, status_code=403)
+    
+    try:
+        records_file = DATA_DIR / "profession_records.json"
+        
+        if not records_file.exists():
+            return JSONResponse({
+                "success": True,
+                "ready": [],
+                "pending": []
+            })
+        
+        with open(records_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        ready_professions = []
+        pending_professions = []
+        
+        for record in data.get("profession_records", []):
+            profession_key = f"{record.get('real_name', '')} - {record.get('specialization', 'Общая')}"
+            
+            profession_info = {
+                "profession_key": profession_key,
+                "profession": record.get('real_name', ''),
+                "specialization": record.get('specialization', ''),
+                "profession_id": record.get('id', ''),
+                "updated_at": record.get('questions_generated_at', record.get('updated_at'))
+            }
+            
+            if record.get("status") == "questions_generated" and record.get("questions"):
+                # Подсчитываем вопросы по сложности
+                questions = record.get("questions", [])
+                breakdown = {"easy": 0, "medium": 0, "hard": 0}
+                
+                for question in questions:
+                    difficulty = question.get("difficulty", "medium")
+                    if difficulty in breakdown:
+                        breakdown[difficulty] += 1
+                
+                profession_info.update({
+                    "questions_count": len(questions),
+                    "breakdown": breakdown
+                })
+                
+                ready_professions.append(profession_info)
+                
+            elif record.get("status") == "approved_by_head":
+                # Считаем ожидаемое количество вопросов на основе тегов
+                tags = record.get("tags", {})
+                tags_count = len(tags)
+                expected_questions = calculate_expected_questions_count(tags)
+                
+                # Получаем топ-3 тега
+                top_tags = []
+                if tags:
+                    sorted_tags = sorted(tags.items(), key=lambda x: x[1], reverse=True)
+                    top_tags = [tag for tag, weight in sorted_tags[:3]]
+                
+                profession_info.update({
+                    "expected_questions": f"~{expected_questions}",
+                    "tags_count": tags_count,
+                    "top_tags": top_tags,
+                    "status": "pending"
+                })
+                
+                pending_professions.append(profession_info)
+        
+        return JSONResponse({
+            "success": True,
+            "ready": ready_professions,
+            "pending": pending_professions
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения обзора вопросов: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.delete("/api/questions/{profession_key}")
+async def delete_questions_by_key(profession_key: str, request: Request):
+    """Удаление всех вопросов для профессии-специализации"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    if user["role"] != "super_admin":
+        return JSONResponse({"error": "Доступ запрещен"}, status_code=403)
+    
+    try:
+        # Декодируем ключ профессии
+        profession_key = profession_key.replace("%20", " ")
+        profession_name, specialization = parse_profession_key(profession_key)
+        
+        records_file = DATA_DIR / "profession_records.json"
+        
+        with open(records_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        found = False
+        for record in data["profession_records"]:
+            if (record.get("real_name") == profession_name and 
+                record.get("specialization", "Общая") == specialization):
+                
+                # Очищаем вопросы и возвращаем статус
+                record["questions"] = []
+                record["status"] = "approved_by_head"
+                record.pop("questions_generated_at", None)
+                
+                # Добавляем в историю
+                record["workflow_history"].append({
+                    "status": "questions_cleared",
+                    "timestamp": datetime.now().isoformat() + "Z",
+                    "user": user["email"],
+                    "action": f"Вопросы удалены супер админом"
+                })
+                
+                found = True
+                break
+        
+        if not found:
+            return JSONResponse({"error": "Профессия не найдена"}, status_code=404)
+        
+        # Сохраняем изменения
+        with open(records_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"🗑️ Вопросы удалены для {profession_key} пользователем {user['name']}")
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"Все вопросы для '{profession_key}' успешно удалены"
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка удаления вопросов: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.post("/api/generate-single/{profession_key}")
+async def generate_questions_for_single_profession(profession_key: str, request: Request):
+    """Генерация вопросов для одной профессии-специализации"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    if user["role"] != "super_admin":
+        return JSONResponse({"error": "Доступ запрещен"}, status_code=403)
+    
+    try:
+        # Декодируем ключ профессии
+        profession_key = profession_key.replace("%20", " ")
+        profession_name, specialization = parse_profession_key(profession_key)
+        
+        # Находим профессию
+        records_file = DATA_DIR / "profession_records.json"
+        
+        with open(records_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        target_profession = None
+        for record in data["profession_records"]:
+            if (record.get("real_name") == profession_name and 
+                record.get("specialization", "Общая") == specialization and
+                record.get("status") == "approved_by_head"):
+                target_profession = record
+                break
+        
+        if not target_profession:
+            return JSONResponse({"error": "Профессия не найдена или не готова к генерации"}, status_code=404)
+        
+        # Обновляем статус на "генерируется"
+        target_profession["status"] = "generating"
+        target_profession["generation_started_at"] = datetime.now().isoformat() + "Z"
+        target_profession["workflow_history"].append({
+            "status": "generation_started",
+            "timestamp": datetime.now().isoformat() + "Z",
+            "user": user["email"],
+            "action": f"Запущена генерация вопросов супер админом"
+        })
+        
+        # Сохраняем промежуточный статус
+        with open(records_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        # Запускаем генерацию в фоне
+        import asyncio
+        asyncio.create_task(generate_questions_background(target_profession, user))
+        
+        logger.info(f"🤖 Запущена генерация вопросов для {profession_key} пользователем {user['name']}")
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"Генерация вопросов для '{profession_key}' запущена",
+            "profession_id": target_profession["id"]
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка запуска генерации: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+# === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+
+def calculate_expected_questions_count(tags: Dict[str, int]) -> int:
+    """Расчет ожидаемого количества вопросов на основе тегов"""
+    if not tags:
+        return 0
+    
+    total_questions = 0
+    for tag, weight in tags.items():
+        if weight >= 85:
+            total_questions += 50  # Критично важный тег
+        elif weight >= 70:
+            total_questions += 40  # Важный тег
+        elif weight >= 55:
+            total_questions += 32  # Средний тег
+        else:
+            total_questions += 25  # Низкий тег
+    
+    return total_questions
+
+def parse_profession_key(profession_key: str) -> tuple:
+    """Парсинг ключа профессии 'Название - Специализация'"""
+    if " - " in profession_key:
+        parts = profession_key.split(" - ", 1)
+        return parts[0], parts[1]
+    else:
+        return profession_key, "Общая"
+
+async def generate_questions_background(profession: Dict[str, Any], user: Dict[str, Any]):
+    """Фоновая генерация вопросов для профессии"""
+    try:
+        # Генерируем вопросы
+        questions_result = await questions_generator.generate_questions_for_profession(profession)
+        
+        # Обновляем профессию в файле
+        records_file = DATA_DIR / "profession_records.json"
+        
+        with open(records_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Находим и обновляем профессию
+        for record in data["profession_records"]:
+            if record["id"] == profession["id"]:
+                if questions_result.get("success"):
+                    record["questions"] = questions_result["questions"]
+                    record["status"] = "questions_generated"
+                    record["questions_generated_at"] = datetime.now().isoformat() + "Z"
+                    record["workflow_history"].append({
+                        "status": "questions_generated",
+                        "timestamp": datetime.now().isoformat() + "Z",
+                        "user": "system",
+                        "action": f"ИИ сгенерировал {questions_result['stats']['total_questions']} вопросов"
+                    })
+                    
+                    logger.info(f"✅ Фоновая генерация завершена для {record['real_name']}: {questions_result['stats']['total_questions']} вопросов")
+                else:
+                    record["status"] = "approved_by_head"  # Возвращаем исходный статус
+                    record["workflow_history"].append({
+                        "status": "generation_failed",
+                        "timestamp": datetime.now().isoformat() + "Z",
+                        "user": "system",
+                        "action": f"Ошибка генерации: {questions_result.get('error', 'Неизвестная ошибка')}"
+                    })
+                    
+                    logger.error(f"❌ Фоновая генерация не удалась для {record['real_name']}: {questions_result.get('error')}")
+                
+                record.pop("generation_started_at", None)
+                break
+        
+        # Сохраняем результат
+        with open(records_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка фоновой генерации: {e}")
+        
+        # В случае ошибки возвращаем статус обратно
+        try:
+            records_file = DATA_DIR / "profession_records.json"
+            with open(records_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            for record in data["profession_records"]:
+                if record["id"] == profession["id"]:
+                    record["status"] = "approved_by_head"
+                    record.pop("generation_started_at", None)
+                    break
+            
+            with open(records_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except:
+            pass
+
+
 # === WEBSOCKET ДЛЯ ЧАТА ===
 
 @app.websocket("/ws/chat/{user_id}")

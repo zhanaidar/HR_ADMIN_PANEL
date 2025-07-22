@@ -542,8 +542,10 @@
                 <span class="questions-count">{{ total_questions }}</span>
                 {% endif %}
             </h1>
-            
             <div class="header-actions">
+                <button class="btn btn-primary" onclick="window.location.href='/questions-management'">
+                    🎛️ Управление генерацией
+                </button>
                 <button class="btn btn-secondary" onclick="exportQuestions()">
                     📊 Экспорт данных
                 </button>

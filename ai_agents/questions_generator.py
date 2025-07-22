@@ -150,16 +150,16 @@ class QuestionsGenerator:
         # Базовое распределение: 30-50 вопросов
         if weight >= 85:
             # Критично важный тег - максимум вопросов
-            return {"easy": 15, "medium": 20, "hard": 15}  # 50 вопросов
+            return {"easy": 5, "medium": 7, "hard": 5}  # 50 вопросов
         elif weight >= 70:
             # Важный тег - много вопросов
-            return {"easy": 12, "medium": 15, "hard": 13}  # 40 вопросов
+            return {"easy": 4, "medium": 5, "hard": 4}  # 40 вопросов
         elif weight >= 55:
             # Средний тег - стандартное количество
-            return {"easy": 10, "medium": 12, "hard": 10}  # 32 вопроса
+            return {"easy": 3, "medium": 4, "hard": 3}  # 32 вопроса
         else:
             # Низкий вес - минимум вопросов
-            return {"easy": 8, "medium": 10, "hard": 7}   # 25 вопросов
+            return {"easy": 3, "medium": 4, "hard": 2}   # 25 вопросов
     
     async def _generate_difficulty_level_questions(self, tag: str, difficulty: str, count: int, profession_context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Генерация вопросов определенного уровня сложности"""
@@ -187,86 +187,177 @@ class QuestionsGenerator:
             return []
     
     def _create_questions_prompt(self, tag: str, difficulty: str, count: int, profession_context: Dict[str, Any]) -> str:
-        """Создание промпта для генерации вопросов"""
+        """Создание простого и эффективного промпта для генерации вопросов"""
         
-        difficulty_descriptions = {
-            "easy": {
-                "level": "Базовый уровень",
-                "description": "Основы, определения, простые концепции",
-                "examples": "Что такое {tag}? Основные принципы {tag}? Базовый синтаксис?"
+        # Извлекаем данные профессии
+        profession = profession_context.get('real_name', '')
+        specialization = profession_context.get('specialization', '')
+        
+        # Получаем релевантный пример
+        example = self._get_example_for_context(tag, profession, specialization, difficulty)
+        
+        return f"""
+    Создай {count} уникальных вопросов уровня {difficulty} по тегу "{tag}" для профессии "{profession}" (специализация: {specialization}).
+
+    ПРИМЕР СТРУКТУРЫ:
+    {example['question']}
+    A) {example['options'][0]} ✓
+    B) {example['options'][1]}
+    C) {example['options'][2]}
+    D) {example['options'][3]}
+
+    ПРАВИЛА:
+    1. Все вопросы должны быть РАЗНЫЕ (не повторяться)
+    2. Дистракторы ТОЛЬКО из области "{tag}" или смежных технологий
+    3. НЕ используй универсальные ответы из других областей
+    4. Дистракторы НЕ должны повторяться между вопросами
+    5. Все варианты ответов должны выглядеть правдоподобно (нельзя угадать методом исключения)
+
+    ФОРМАТ JSON:
+    [
+        {{
+            "question": "Вопрос о {tag} для {profession}?",
+            "options": ["Правильный ответ", "Дистрактор 1", "Дистрактор 2", "Дистрактор 3"],
+            "correct_answer": "Правильный ответ",
+            "explanation": "Краткое объяснение",
+            "difficulty": "{difficulty}",
+            "category": "Категория вопроса"
+        }}
+    ]
+    """
+
+    def _get_example_for_context(self, tag: str, profession: str, specialization: str, difficulty: str) -> dict:
+        """Генерирует конкретный пример для контекста"""
+        
+        examples = {
+            # Python примеры
+            ("Python", "Data Scientist", "Machine Learning", "easy"): {
+                "question": "Какая библиотека Python используется для работы с массивами и матрицами?",
+                "options": ["NumPy", "requests", "datetime", "os"]
             },
-            "medium": {
-                "level": "Средний уровень", 
-                "description": "Практическое применение, решение задач, работа с инструментами",
-                "examples": "Как использовать {tag} для решения задач? Лучшие практики {tag}? Интеграция с другими технологиями?"
+            ("Python", "Data Scientist", "Machine Learning", "medium"): {
+                "question": "Какой метод sklearn используется для разделения данных на train/test?",
+                "options": ["train_test_split()", "split_data()", "divide_dataset()", "separate_data()"]
             },
-            "hard": {
-                "level": "Продвинутый уровень",
-                "description": "Оптимизация, архитектура, экспертные знания, troubleshooting",
-                "examples": "Оптимизация производительности {tag}? Архитектурные паттерны? Решение сложных проблем?"
+            ("Python", "Data Scientist", "Computer Vision", "medium"): {
+                "question": "Какая библиотека используется для обработки изображений в Python?",
+                "options": ["OpenCV", "requests", "json", "datetime"]
+            },
+            ("Python", "Software Developer", "Backend Development", "easy"): {
+                "question": "Какой фреймворк используется для создания REST API в Python?",
+                "options": ["FastAPI", "pandas", "numpy", "matplotlib"]
+            },
+            
+            # Machine Learning примеры
+            ("Machine Learning", "Data Scientist", "Machine Learning", "easy"): {
+                "question": "Какой алгоритм лучше всего подходит для задач классификации с линейно разделимыми данными?",
+                "options": ["Логистическая регрессия", "K-means", "PCA", "DBSCAN"]
+            },
+            ("Machine Learning", "Data Scientist", "Machine Learning", "medium"): {
+                "question": "Какая метрика используется для оценки качества модели классификации?",
+                "options": ["F1-score", "MSE", "MAE", "R²"]
+            },
+            ("Machine Learning", "Data Scientist", "Computer Vision", "medium"): {
+                "question": "Какая архитектура нейросети лучше для обработки изображений?",
+                "options": ["CNN", "RNN", "LSTM", "GRU"]
+            },
+            
+            # SQL примеры
+            ("SQL", "Data Scientist", "Machine Learning", "easy"): {
+                "question": "Какая команда SQL используется для выборки данных из таблицы?",
+                "options": ["SELECT", "GET", "FETCH", "RETRIEVE"]
+            },
+            ("SQL", "Data Analyst", "Business Intelligence", "medium"): {
+                "question": "Какая команда SQL используется для объединения таблиц по ключу?",
+                "options": ["JOIN", "MERGE", "COMBINE", "UNITE"]
+            },
+            
+            # Deep Learning примеры
+            ("Deep Learning", "Data Scientist", "Computer Vision", "medium"): {
+                "question": "Какая функция активации чаще всего используется в скрытых слоях нейросетей?",
+                "options": ["ReLU", "Sigmoid", "Tanh", "Linear"]
+            },
+            ("Deep Learning", "Data Scientist", "Machine Learning", "hard"): {
+                "question": "Какой метод используется для предотвращения переобучения в нейросетях?",
+                "options": ["Dropout", "Normalization", "Standardization", "Aggregation"]
+            },
+            
+            # Computer Vision примеры
+            ("Computer Vision", "Data Scientist", "Computer Vision", "easy"): {
+                "question": "Какой фильтр используется для размытия изображения?",
+                "options": ["Гауссов фильтр", "Медианный фильтр", "Собел фильтр", "Лапласиан"]
+            },
+            ("Computer Vision", "Data Scientist", "Computer Vision", "medium"): {
+                "question": "Какой алгоритм используется для детекции границ на изображении?",
+                "options": ["Canny", "SIFT", "SURF", "ORB"]
+            },
+            
+            # Data Analysis примеры
+            ("Data Analysis", "Data Scientist", "Machine Learning", "easy"): {
+                "question": "Какая мера центральной тенденции устойчива к выбросам?",
+                "options": ["Медиана", "Среднее арифметическое", "Размах", "Дисперсия"]
+            },
+            ("Data Analysis", "Data Analyst", "Business Intelligence", "medium"): {
+                "question": "Какой коэффициент измеряет линейную связь между переменными?",
+                "options": ["Корреляция Пирсона", "Дисперсия", "Среднее отклонение", "Коэффициент вариации"]
+            },
+            
+            # Statistics примеры
+            ("Statistics", "Data Scientist", "Machine Learning", "medium"): {
+                "question": "Какой тест используется для проверки нормальности распределения?",
+                "options": ["Тест Шапиро-Уилка", "t-тест", "Тест Фишера", "Тест Левена"]
+            },
+            
+            # TensorFlow примеры
+            ("TensorFlow", "Data Scientist", "Deep Learning", "medium"): {
+                "question": "Какой класс в TensorFlow используется для создания полносвязного слоя?",
+                "options": ["Dense", "Conv2D", "LSTM", "Embedding"]
+            },
+            
+            # OpenCV примеры
+            ("OpenCV", "Data Scientist", "Computer Vision", "easy"): {
+                "question": "Какая функция OpenCV используется для чтения изображения?",
+                "options": ["cv2.imread()", "cv2.load()", "cv2.open()", "cv2.get()"]
+            },
+            
+            # Git примеры (для любых IT профессий)
+            ("Git", "Software Developer", "Backend Development", "easy"): {
+                "question": "Какая команда Git используется для создания коммита?",
+                "options": ["git commit", "git save", "git push", "git add"]
+            },
+            
+            # Docker примеры
+            ("Docker", "Software Developer", "DevOps", "medium"): {
+                "question": "Какая команда Docker используется для запуска контейнера?",
+                "options": ["docker run", "docker start", "docker launch", "docker execute"]
             }
         }
         
-        level_info = difficulty_descriptions[difficulty]
+        # Ищем точное совпадение
+        key = (tag, profession, specialization, difficulty)
+        if key in examples:
+            return examples[key]
         
-        return f"""
-        Создай {count} УНИКАЛЬНЫХ вопросов уровня "{level_info['level']}" для навыка "{tag}".
+        # Ищем без учета сложности
+        for (t, p, s, d), example in examples.items():
+            if t == tag and p == profession and s == specialization:
+                return example
         
-        КОНТЕКСТ ПРОФЕССИИ:
-        - Позиция: {profession_context['real_name']}
-        - Специализация: {profession_context['specialization']}
-        - Банковское название: {profession_context['bank_title']}
-        - Департамент: {profession_context['department']}
+        # Ищем без специализации
+        for (t, p, s, d), example in examples.items():
+            if t == tag and p == profession:
+                return example
         
-        УРОВЕНЬ СЛОЖНОСТИ: {level_info['level']}
-        ФОКУС: {level_info['description']}
+        # Ищем только по тегу
+        for (t, p, s, d), example in examples.items():
+            if t == tag:
+                return example
         
-        ТРЕБОВАНИЯ К ВОПРОСАМ:
-        1. Каждый вопрос должен быть УНИКАЛЬНЫМ и РАЗНЫМ
-        2. Все вопросы строго о навыке "{tag}"
-        3. Актуальные, современные знания
-        4. Практические, реальные сценарии
-        5. 4 варианта ответа для каждого вопроса
-        6. Один правильный ответ
-        7. Краткое объяснение правильного ответа
-        
-        ТИПЫ ВОПРОСОВ ДЛЯ "{tag}" (уровень {difficulty}):
-        {level_info['examples'].replace('{tag}', tag)}
-        
-        АСПЕКТЫ ДЛЯ ПОКРЫТИЯ:
-        {"Основы, синтаксис, концепции" if difficulty == "easy" else 
-         "Практика, инструменты, методы, интеграция" if difficulty == "medium" else
-         "Оптимизация, архитектура, troubleshooting, экспертные практики"}
-        
-        ФОРМАТ ОТВЕТА (JSON массив):
-        [
-            {{
-                "question": "Конкретный вопрос о {tag}?",
-                "options": ["Вариант A", "Вариант B", "Вариант C", "Вариант D"],
-                "correct_answer": "Правильный вариант",
-                "explanation": "Краткое объяснение почему этот ответ правильный",
-                "difficulty": "{difficulty}",
-                "category": "категория вопроса"
-            }},
-            {{
-                "question": "Следующий уникальный вопрос о {tag}?",
-                "options": ["Вариант A", "Вариант B", "Вариант C", "Вариант D"],
-                "correct_answer": "Правильный вариант",
-                "explanation": "Объяснение ответа",
-                "difficulty": "{difficulty}",
-                "category": "другая категория"
-            }}
-        ]
-        
-        КРИТИЧНО ВАЖНО:
-        - Генерируй РОВНО {count} вопросов
-        - Каждый вопрос должен быть РАЗНЫМ
-        - Все вопросы только о "{tag}"
-        - Современные, актуальные знания
-        - Отвечай ТОЛЬКО JSON массивом
-        
-        Создай {count} разнообразных вопросов уровня {difficulty} для {tag}!
-        """
+        # Дефолтный пример
+        return {
+            "question": f"Вопрос о {tag} для {profession}?",
+            "options": ["Правильный ответ", "Дистрактор 1", "Дистрактор 2", "Дистрактор 3"]
+        }
     
     def _get_system_prompt(self, difficulty: str) -> str:
         """Получение системного промпта в зависимости от сложности"""
