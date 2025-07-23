@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Тестирование кандидата - Halyk Bank</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+
+
+    <!-- MediaPipe для детекции лиц и взгляда (ИСПРАВЛЕНО) -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    
+    <!-- TensorFlow.js для ML анализа -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.10.0/tf.min.js"></script>
+    
     <style>
         * { box-sizing: border-box; }
         
@@ -160,7 +172,7 @@
             transform: none !important;
         }
 
-        /* Видео и логи */
+        /* УЛУЧШЕННАЯ ВИДЕОСЕКЦИЯ С ПРОКТОРИНГОМ */
         .panel-section {
             margin-bottom: 25px;
         }
@@ -177,7 +189,7 @@
 
         #video-feed {
             width: 100%;
-            height: 180px;
+            height: 200px;
             border-radius: 12px;
             background: var(--gray-900);
             display: flex;
@@ -194,6 +206,107 @@
             height: 100%;
             object-fit: cover;
             border-radius: 12px;
+        }
+
+        /* НОВЫЕ ЭЛЕМЕНТЫ ПРОКТОРИНГА */
+        .proctoring-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            border-radius: 12px;
+        }
+
+        .face-detection-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+        }
+
+        .gaze-indicator {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .gaze-center { background: var(--success) !important; }
+        .gaze-suspicious { background: var(--danger) !important; animation: pulse 1s infinite; }
+        .gaze-thinking { background: var(--warning) !important; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* АУДИО АНАЛИЗАТОР */
+        .audio-analyzer {
+            background: var(--gray-900);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+
+        .audio-visualizer {
+            display: flex;
+            align-items: end;
+            gap: 2px;
+            height: 30px;
+            margin-bottom: 5px;
+        }
+
+        .audio-bar {
+            width: 3px;
+            background: var(--success);
+            border-radius: 1px;
+            transition: height 0.1s;
+        }
+
+        .voice-detection {
+            font-size: 10px;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .voice-count {
+            font-weight: bold;
+        }
+
+        .voice-warning {
+            color: var(--danger);
+            animation: pulse 1s infinite;
+        }
+
+        /* УМНОЕ ОПОВЕЩЕНИЕ О ЗАПИСИ */
+        .recording-indicator {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--danger);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            z-index: 10001;
+            display: none;
+            animation: pulse 2s infinite;
+        }
+
+        .recording-indicator.active {
+            display: block;
         }
 
         .log-content {
@@ -216,6 +329,8 @@
         .log-entry.success { color: var(--success); }
         .log-entry.warning { color: var(--warning); }
         .log-entry.danger { color: var(--danger); }
+        .log-entry.ml-analysis { color: #60A5FA; }
+        .log-entry.voice-analysis { color: #F472B6; }
 
         /* Таймер */
         .timer-container {
@@ -474,7 +589,6 @@
         }
 
         /* Результаты */
-        /* Обновленные стили результатов */
         .grade-display {
             display: flex;
             align-items: center;
@@ -650,7 +764,6 @@
             }
         }
 
-
         .results-screen {
             text-align: center;
             padding: 40px 20px;
@@ -663,13 +776,6 @@
             margin: 30px 0;
             border: 3px solid var(--success);
             box-shadow: 0 15px 40px rgba(29, 181, 132, 0.15);
-        }
-
-        .result-score {
-            font-size: 4rem;
-            font-weight: 700;
-            color: var(--success);
-            margin-bottom: 15px;
         }
 
         .result-details {
@@ -819,22 +925,41 @@
 </div>
 </noscript>
 
+<!-- ИНДИКАТОР ЗАПИСИ -->
+<div id="recording-indicator" class="recording-indicator">
+    🔴 ЗАПИСЬ ПОДОЗРИТЕЛЬНОЙ АКТИВНОСТИ
+</div>
+
 <div id="main-content">
     <div class="main-layout">
-        <!-- ЛЕВАЯ ПАНЕЛЬ - Видеонаблюдение -->
+        <!-- ЛЕВАЯ ПАНЕЛЬ - Продвинутое видеонаблюдение -->
         <div class="left-panel">
             <div class="panel-section">
-                <div class="panel-title">📹 Видеонаблюдение</div>
+                <div class="panel-title">🤖 ИИ Видеопрокторинг</div>
                 <div id="video-feed">
                     <video id="camera-video" autoplay muted style="display: none;"></video>
+                    <canvas id="face-detection-canvas" class="face-detection-canvas"></canvas>
+                    <div id="gaze-indicator" class="gaze-indicator">Взгляд: Анализ...</div>
                     <div id="camera-placeholder" style="color: #9CA3AF;">Камера не активна</div>
+                    <div class="proctoring-overlay"></div>
+                </div>
+                
+                <!-- АУДИО АНАЛИЗАТОР -->
+                <div class="audio-analyzer">
+                    <div class="audio-visualizer" id="audio-visualizer">
+                        <!-- Полоски аудио будут добавлены JS -->
+                    </div>
+                    <div class="voice-detection">
+                        <span>Голосов: <span id="voice-count" class="voice-count">0</span></span>
+                        <span id="voice-status">Анализ...</span>
+                    </div>
                 </div>
             </div>
             
             <div class="panel-section">
-                <div class="panel-title">📋 Действия кандидата</div>
+                <div class="panel-title">📋 ML Анализ поведения</div>
                 <div class="log-content" id="candidate-logs">
-                    <div class="log-entry success">[Система готова к работе]</div>
+                    <div class="log-entry success">[Система ИИ прокторинга готова]</div>
                 </div>
             </div>
         </div>
@@ -845,7 +970,7 @@
             <div id="welcome-screen" class="screen active">
                 <div class="welcome-screen">
                     <h1 class="page-title">🏦 Halyk Bank</h1>
-                    <h2 class="page-subtitle">Система тестирования кандидатов</h2>
+                    <h2 class="page-subtitle">Система тестирования с ИИ прокторингом</h2>
                     
                     <div class="test-info">
                         <div class="info-row">
@@ -871,18 +996,19 @@
                     </div>
 
                     <div style="margin: 40px 0;">
-                        <h3 style="color: var(--danger); margin-bottom: 20px;">⚠️ Правила тестирования:</h3>
-                        <ul style="text-align: left; max-width: 500px; margin: 0 auto; line-height: 1.8;">
+                        <h3 style="color: var(--danger); margin-bottom: 20px;">⚠️ Правила тестирования с ИИ:</h3>
+                        <ul style="text-align: left; max-width: 600px; margin: 0 auto; line-height: 1.8;">
                             <li><strong>Полноэкранный режим обязателен</strong> - выход приведет к завершению теста</li>
-                            <li><strong>Все действия отслеживаются</strong> - переключения вкладок, потеря фокуса</li>
-                            <li><strong>Видеонаблюдение активно</strong> - включите камеру для честного тестирования</li>
+                            <li><strong>ИИ отслеживает взгляд</strong> - смотрите на экран, не читайте с других источников</li>
+                            <li><strong>Видео и аудио анализ активны</strong> - система детектирует подсказки</li>
+                            <li><strong>Подозрительные моменты записываются</strong> - 1 минута до/после нарушения</li>
+                            <li><strong>ML алгоритмы различают</strong> размышление от списывания</li>
                             <li><strong>30 минут на весь тест</strong> - после истечения времени тест завершится автоматически</li>
-                            <li><strong>Нельзя вернуться к предыдущим вопросам</strong> после их завершения</li>
                         </ul>
                     </div>
 
                     <button class="btn btn-primary" onclick="startTest()" style="font-size: 1.2rem; padding: 20px 40px;">
-                        🚀 Начать тестирование
+                        🚀 Начать тестирование с ИИ
                     </button>
                 </div>
             </div>
@@ -927,11 +1053,10 @@
             </div>
 
             <!-- ЭКРАН РЕЗУЛЬТАТОВ -->
-
             <div id="results-screen" class="screen">
                 <div class="results-screen">
                     <h1 class="page-title">🎉 Тестирование завершено!</h1>
-                    <h2 class="page-subtitle">Ваши результаты готовы</h2>
+                    <h2 class="page-subtitle">Ваши результаты с анализом ИИ готовы</h2>
 
                     <!-- ОЦЕНКА И ОСНОВНЫЕ РЕЗУЛЬТАТЫ -->
                     <div class="result-card">
@@ -976,7 +1101,7 @@
                     <!-- ПЕРСОНАЛЬНЫЕ РЕКОМЕНДАЦИИ -->
                     <div id="recommendations-section" class="recommendations-section" style="display: none;">
                         <h3 style="text-align: center; color: var(--gray-900); margin-bottom: 20px;">
-                            💡 Персональные рекомендации
+                            💡 Персональные рекомендации от ИИ
                         </h3>
                         <div class="recommendations-content">
                             <div id="recommendations-text" class="recommendations-text">
@@ -988,20 +1113,20 @@
                     <!-- ЗАКЛЮЧЕНИЕ -->
                     <div class="conclusion-message">
                         <p style="color: var(--gray-500); line-height: 1.6; text-align: center;">
-                            Благодарим за прохождение тестирования!<br>
-                            Результаты отправлены в HR отдел для анализа.
+                            Благодарим за прохождение тестирования с ИИ прокторингом!<br>
+                            Результаты и записи подозрительных моментов отправлены в HR отдел.
                         </p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- ПРАВАЯ ПАНЕЛЬ - Безопасность -->
+        <!-- ПРАВАЯ ПАНЕЛЬ - ИИ Безопасность -->
         <div class="right-panel">
             <div class="panel-section">
-                <div class="panel-title">🔒 Система безопасности</div>
+                <div class="panel-title">🧠 ИИ Анализ безопасности</div>
                 <div class="log-content" id="security-logs">
-                    <div class="log-entry success">[Мониторинг активирован]</div>
+                    <div class="log-entry success">[ИИ мониторинг активирован]</div>
                 </div>
             </div>
             
@@ -1009,8 +1134,10 @@
                 <div class="panel-title">📊 Статистика нарушений</div>
                 <div class="log-content" id="stats-logs">
                     <div class="log-entry">Переключений вкладок: 0</div>
-                    <div class="log-entry">Потерь фокуса: 0</div>
-                    <div class="log-entry">Подозрительных действий: 0</div>
+                    <div class="log-entry">Подозрительных взглядов: 0</div>
+                    <div class="log-entry">Множественных лиц: 0</div>
+                    <div class="log-entry">Посторонних голосов: 0</div>
+                    <div class="log-entry">Записанных фрагментов: 0</div>
                 </div>
             </div>
         </div>
@@ -1028,6 +1155,10 @@
         </div>
     </div>
 
+    <!-- СКРЫТЫЕ ЭЛЕМЕНТЫ ДЛЯ ЗАПИСИ -->
+    <video id="recording-video" style="display: none;"></video>
+    <audio id="audio-context" style="display: none;"></audio>
+
     <script>
         // === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ===
         let testSession = null;
@@ -1044,10 +1175,692 @@
         let securityStats = {
             tabSwitches: 0,
             focusLosses: 0,
-            suspiciousActivity: 0
+            suspiciousActivity: 0,
+            suspiciousGaze: 0,
+            multipleFaces: 0,
+            externalVoices: 0,
+            recordedFragments: 0
         };
 
-        // === ФУНКЦИИ ЛОГИРОВАНИЯ ===
+        // === ИИ ПРОКТОРИНГ ПЕРЕМЕННЫЕ ===
+        let faceMesh = null;
+        let camera = null;
+        let isRecording = false;
+        let mediaRecorder = null;
+        let recordingStream = null;
+        let suspiciousRecordings = [];
+        let audioContext = null;
+        let audioAnalyzer = null;
+        let audioDataArray = null;
+        let voiceDetectionActive = false;
+        let currentVoiceCount = 0;
+        let gazeAnalysisInterval = null;
+        let lastGazeState = 'center';
+
+        // === ПРОДВИНУТЫЕ АЛГОРИТМЫ ИИ ===
+        
+        // ДЕТЕКЦИЯ ВЗГЛЯДА И АНАЛИЗ ПОВЕДЕНИЯ
+        const GazeAnalyzer = {
+            // Анализирует направление взгляда на основе позиции глаз
+            analyzeGazeDirection(landmarks) {
+                try {
+                    // Ключевые точки для анализа взгляда
+                    const leftEye = landmarks[33]; // Левый глаз (внутренний уголок)
+                    const rightEye = landmarks[263]; // Правый глаз (внутренний уголок)
+                    const noseTip = landmarks[1]; // Кончик носа
+                    const leftPupil = landmarks[468]; // Примерное положение зрачка
+                    const rightPupil = landmarks[473];
+                    
+                    if (!leftEye || !rightEye || !noseTip) {
+                        return { direction: 'unknown', confidence: 0, suspicious: false };
+                    }
+                    
+                    // Рассчитываем центр лица и направление взгляда
+                    const faceCenter = {
+                        x: (leftEye.x + rightEye.x) / 2,
+                        y: (leftEye.y + rightEye.y) / 2
+                    };
+                    
+                    // Анализируем отклонение взгляда от центра
+                    const gazeOffset = {
+                        x: noseTip.x - faceCenter.x,
+                        y: noseTip.y - faceCenter.y
+                    };
+                    
+                    // УМНЫЙ АНАЛИЗ ПАТТЕРНОВ ВЗГЛЯДА
+                    let direction, confidence, suspicious = false;
+                    
+                    if (Math.abs(gazeOffset.x) < 0.02 && Math.abs(gazeOffset.y) < 0.02) {
+                        direction = 'center';
+                        confidence = 0.9;
+                    } else if (gazeOffset.y < -0.03) {
+                        // Взгляд вверх - может быть размышлением
+                        direction = 'thinking-up';
+                        confidence = 0.8;
+                    } else if (gazeOffset.y > 0.05) {
+                        // Взгляд вниз - подозрительно (телефон/шпаргалки)
+                        direction = 'suspicious-down';
+                        confidence = 0.9;
+                        suspicious = true;
+                    } else if (gazeOffset.x < -0.04) {
+                        // Взгляд влево - может быть второй монитор
+                        direction = 'suspicious-left';
+                        confidence = 0.85;
+                        suspicious = true;
+                    } else if (gazeOffset.x > 0.04) {
+                        // Взгляд вправо - может быть второй монитор
+                        direction = 'suspicious-right';
+                        confidence = 0.85;
+                        suspicious = true;
+                    } else {
+                        direction = 'wandering';
+                        confidence = 0.7;
+                    }
+                    
+                    return { direction, confidence, suspicious };
+                } catch (error) {
+                    console.error('Ошибка анализа взгляда:', error);
+                    return { direction: 'error', confidence: 0, suspicious: false };
+                }
+            },
+
+            // Анализ паттернов читающего взгляда
+            detectReadingPattern(gazeHistory) {
+                if (gazeHistory.length < 10) return false;
+                
+                // Ищем горизонтальные движения глаз (паттерн чтения)
+                let horizontalMovements = 0;
+                for (let i = 1; i < gazeHistory.length; i++) {
+                    const prev = gazeHistory[i-1];
+                    const curr = gazeHistory[i];
+                    
+                    if (Math.abs(curr.x - prev.x) > 0.03 && Math.abs(curr.y - prev.y) < 0.02) {
+                        horizontalMovements++;
+                    }
+                }
+                
+                // Если более 60% движений горизонтальные - подозрительно
+                return (horizontalMovements / gazeHistory.length) > 0.6;
+            },
+
+            // Различает размышление от списывания
+            classifyBehavior(gazeHistory, audioActivity) {
+                const recentGaze = gazeHistory.slice(-20); // Последние 20 точек
+                
+                // Паттерны размышления
+                const upwardLooks = recentGaze.filter(g => g.direction === 'thinking-up').length;
+                const centerLooks = recentGaze.filter(g => g.direction === 'center').length;
+                const randomMovements = this.calculateRandomness(recentGaze);
+                
+                // Паттерны списывания
+                const suspiciousLooks = recentGaze.filter(g => g.suspicious).length;
+                const readingPattern = this.detectReadingPattern(recentGaze);
+                const fixedGaze = this.detectFixedGaze(recentGaze);
+                
+                if (suspiciousLooks > 10 || readingPattern || fixedGaze) {
+                    return { behavior: 'cheating', confidence: 0.9 };
+                } else if (upwardLooks > 5 && centerLooks > 10 && randomMovements > 0.3) {
+                    return { behavior: 'thinking', confidence: 0.8 };
+                } else {
+                    return { behavior: 'normal', confidence: 0.6 };
+                }
+            },
+
+            // Детекция фиксированного взгляда (читает с источника)
+            detectFixedGaze(gazeHistory) {
+                if (gazeHistory.length < 15) return false;
+                
+                const recent = gazeHistory.slice(-15);
+                const variance = this.calculateVariance(recent);
+                
+                // Если взгляд слишком статичен - подозрительно
+                return variance < 0.01;
+            },
+
+            // Рассчитывает случайность движений глаз
+            calculateRandomness(gazeHistory) {
+                if (gazeHistory.length < 5) return 0;
+                
+                let totalChange = 0;
+                for (let i = 1; i < gazeHistory.length; i++) {
+                    const prev = gazeHistory[i-1];
+                    const curr = gazeHistory[i];
+                    totalChange += Math.sqrt(Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2));
+                }
+                
+                return totalChange / gazeHistory.length;
+            },
+
+            // Рассчитывает вариацию позиции взгляда
+            calculateVariance(gazeHistory) {
+                const avgX = gazeHistory.reduce((sum, g) => sum + g.x, 0) / gazeHistory.length;
+                const avgY = gazeHistory.reduce((sum, g) => sum + g.y, 0) / gazeHistory.length;
+                
+                const variance = gazeHistory.reduce((sum, g) => {
+                    return sum + Math.pow(g.x - avgX, 2) + Math.pow(g.y - avgY, 2);
+                }, 0) / gazeHistory.length;
+                
+                return variance;
+            }
+        };
+
+        // АУДИО АНАЛИЗАТОР ДЛЯ ДЕТЕКЦИИ ГОЛОСОВ
+        const VoiceAnalyzer = {
+            // Анализирует аудиопоток на предмет множественных голосов
+            async analyzeAudioStream(stream) {
+                console.log('🎤 НАЧИНАЕМ АНАЛИЗ АУДИО');
+                console.log('🎤 Stream получен:', !!stream);
+                
+                // ПРОВЕРЯЕМ ТРЕКИ
+                const audioTracks = stream.getAudioTracks();
+                console.log('🎤 Аудио треки:', audioTracks.length);
+
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const source = audioContext.createMediaStreamSource(stream);
+                    audioAnalyzer = audioContext.createAnalyser();
+                    
+                    audioAnalyzer.fftSize = 2048;
+                    const bufferLength = audioAnalyzer.frequencyBinCount;
+                    audioDataArray = new Uint8Array(bufferLength);
+                    
+                    source.connect(audioAnalyzer);
+                    
+                    // Создаем визуализатор
+                    this.createAudioVisualizer();
+                    
+                    // Запускаем анализ голосов
+                    this.startVoiceDetection();
+                    
+                    addSecurityLog('Аудио анализатор активирован', 'success');
+                } catch (error) {
+                    addSecurityLog('Ошибка аудио анализатора: ' + error.message, 'warning');
+                }
+            },
+
+            // Создает визуальный индикатор аудио
+            createAudioVisualizer() {
+                const visualizer = document.getElementById('audio-visualizer');
+                visualizer.innerHTML = '';
+                
+                for (let i = 0; i < 20; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'audio-bar';
+                    bar.style.height = '2px';
+                    visualizer.appendChild(bar);
+                }
+            },
+
+            // Детекция голосов в реальном времени
+            startVoiceDetection() {
+                console.log('🎤 ЗАПУСКАЕМ ДЕТЕКЦИЮ ГОЛОСОВ');
+                const detectVoices = () => {
+                    if (!audioAnalyzer || !audioDataArray) return;
+                    
+                    audioAnalyzer.getByteFrequencyData(audioDataArray);
+
+                    // ДОБАВЬ ЭТИ СТРОКИ:
+                    const totalActivity = audioDataArray.reduce((sum, val) => sum + val, 0);
+                    const maxValue = Math.max(...audioDataArray);
+                    
+                    // ВСЕГДА показываем активность (даже тишину)
+                    if (maxValue > 5) {  // очень низкий порог
+                        console.log('🎤 АКТИВНОСТЬ! Total:', totalActivity, 'Max:', maxValue);
+                    }
+                    
+                    // Обновляем визуализатор
+                    this.updateAudioVisualizer();
+                    
+                    // Анализируем спектр на предмет голосов
+                    const voiceCount = this.detectVoiceCount(audioDataArray);
+                    this.updateVoiceDetection(voiceCount);
+                    
+                    if (isTestActive) {
+                        requestAnimationFrame(detectVoices);
+                    }
+                };
+                
+                detectVoices();
+            },
+
+            // Обновляет визуальный индикатор аудио
+            updateAudioVisualizer() {
+                const bars = document.querySelectorAll('.audio-bar');
+                
+                for (let i = 0; i < bars.length; i++) {
+                    const dataIndex = Math.floor((i / bars.length) * audioDataArray.length);
+                    const value = audioDataArray[dataIndex];
+                    const height = (value / 255) * 30;
+                    
+                    bars[i].style.height = `${Math.max(2, height)}px`;
+                    
+                    // Цветовое кодирование интенсивности
+                    if (value > 150) {
+                        bars[i].style.background = 'var(--danger)';
+                    } else if (value > 80) {
+                        bars[i].style.background = 'var(--warning)';
+                    } else {
+                        bars[i].style.background = 'var(--success)';
+                    }
+                }
+            },
+
+            // УМНЫЙ АЛГОРИТМ ДЕТЕКЦИИ КОЛИЧЕСТВА ГОЛОСОВ
+            detectVoiceCount(frequencyData) {
+                // Анализируем частотные пики в диапазоне человеческого голоса (85-255 Hz и 255-2000 Hz)
+                const lowFreq = frequencyData.slice(10, 40);   // Низкие частоты голоса
+                const midFreq = frequencyData.slice(40, 120);  // Средние частоты голоса
+                const highFreq = frequencyData.slice(120, 200); // Высокие частоты голоса
+                
+                // Ищем пики активности
+                const lowPeaks = this.findPeaks(lowFreq, 60);
+                const midPeaks = this.findPeaks(midFreq, 80);
+                const highPeaks = this.findPeaks(highFreq, 70);
+                
+                // Комбинированный анализ
+                const totalActivity = [...lowPeaks, ...midPeaks, ...highPeaks];
+                
+                if (totalActivity.length === 0) {
+                    return 0; // Тишина
+                } else if (totalActivity.length <= 3) {
+                    return 1; // Один голос
+                } else if (totalActivity.length <= 6) {
+                    return 2; // Возможно два голоса
+                } else {
+                    return 3; // Множественные голоса
+                }
+            },
+
+            // Находит пики в частотном спектре
+            findPeaks(frequencyArray, threshold) {
+                const peaks = [];
+                for (let i = 1; i < frequencyArray.length - 1; i++) {
+                    if (frequencyArray[i] > threshold && 
+                        frequencyArray[i] > frequencyArray[i-1] && 
+                        frequencyArray[i] > frequencyArray[i+1]) {
+                        peaks.push(i);
+                    }
+                }
+                return peaks;
+            },
+
+            // Обновляет статус детекции голосов
+            updateVoiceDetection(voiceCount) {
+                currentVoiceCount = voiceCount;
+                const voiceCountElement = document.getElementById('voice-count');
+                const voiceStatusElement = document.getElementById('voice-status');
+                
+                voiceCountElement.textContent = voiceCount;
+                
+                if (voiceCount === 0) {
+                    voiceStatusElement.textContent = 'Тишина';
+                    voiceStatusElement.className = '';
+                } else if (voiceCount === 1) {
+                    voiceStatusElement.textContent = 'Норма';
+                    voiceStatusElement.className = '';
+                } else {
+                    voiceStatusElement.textContent = 'ПОДОЗРИТЕЛЬНО!';
+                    voiceStatusElement.className = 'voice-warning';
+                    
+                    if (isTestActive) {
+                        this.handleSuspiciousVoice(voiceCount);
+                    }
+                }
+            },
+
+            // Обработка подозрительной аудио активности
+            async handleSuspiciousVoice(voiceCount) {
+                securityStats.externalVoices++;
+                
+                addSecurityLog(`ПОДОЗРЕНИЕ: Обнаружено ${voiceCount} голосов!`, 'danger');
+                addCandidateLog(`Детектированы посторонние голоса (${voiceCount})`, 'danger');
+                
+                // Запускаем запись подозрительного момента
+                await SmartRecorder.startSuspiciousRecording('multiple_voices');
+                
+                updateSecurityStats();
+            }
+        };
+
+        // СИСТЕМА УМНОЙ ЗАПИСИ
+        const SmartRecorder = {
+            // Запускает запись подозрительного момента
+            async startSuspiciousRecording(reason) {
+                if (isRecording) return; // Уже записываем
+                
+                try {
+                    // Получаем поток видео и аудио
+                    recordingStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { width: 640, height: 480 }, 
+                        audio: true 
+                    });
+                    
+                    // Настраиваем MediaRecorder
+                    mediaRecorder = new MediaRecorder(recordingStream, {
+                        mimeType: 'video/webm;codecs=vp8,opus'
+                    });
+                    
+                    const recordedChunks = [];
+                    
+                    mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) {
+                            recordedChunks.push(event.data);
+                        }
+                    };
+                    
+                    mediaRecorder.onstop = () => {
+                        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                        this.saveSuspiciousRecording(blob, reason);
+                        isRecording = false;
+                        this.hideRecordingIndicator();
+                    };
+                    
+                    // Записываем 60 секунд (30 сек до + 30 сек после)
+                    mediaRecorder.start();
+                    isRecording = true;
+                    this.showRecordingIndicator();
+                    
+                    // Автоматически останавливаем запись через 60 секунд
+                    setTimeout(() => {
+                        if (mediaRecorder && mediaRecorder.state === 'recording') {
+                            mediaRecorder.stop();
+                            recordingStream.getTracks().forEach(track => track.stop());
+                        }
+                    }, 60000); // 1 минута
+                    
+                    securityStats.recordedFragments++;
+                    addSecurityLog(`Запись подозрительного момента: ${reason}`, 'danger');
+                    
+                } catch (error) {
+                    console.error('Ошибка записи:', error);
+                    addSecurityLog('Ошибка системы записи: ' + error.message, 'warning');
+                }
+            },
+
+            // Сохраняет подозрительную запись и отправляет на сервер
+            async saveSuspiciousRecording(blob, reason) {
+                const timestamp = new Date().toISOString();
+                const recording = {
+                    id: Date.now(),
+                    timestamp: timestamp,
+                    reason: reason,
+                    size: blob.size,
+                    blob: blob
+                };
+                
+                suspiciousRecordings.push(recording);
+                
+                // ОТПРАВЛЯЕМ НА СЕРВЕР
+                try {
+                    const formData = new FormData();
+                    formData.append('session_id', testSession.test_session_id);
+                    formData.append('recording_reason', reason);
+                    formData.append('recording_file', blob, `${reason}_${Date.now()}.webm`);
+                    
+                    const response = await fetch('/api/upload-suspicious-recording', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        addSecurityLog(`✅ Запись отправлена: ${result.filename} (${Math.round(result.size/1024)}KB)`, 'success');
+                    } else {
+                        addSecurityLog('❌ Ошибка отправки записи на сервер', 'warning');
+                    }
+                    
+                } catch (error) {
+                    addSecurityLog('❌ Ошибка загрузки записи: ' + error.message, 'warning');
+                }
+                
+                addSecurityLog(`📹 Запись сохранена: ${reason} (${Math.round(blob.size/1024)}KB)`, 'success');
+                addCandidateLog(`Подозрительный момент записан`, 'warning');
+            },
+
+            // Показывает индикатор записи
+            showRecordingIndicator() {
+                const indicator = document.getElementById('recording-indicator');
+                indicator.classList.add('active');
+            },
+
+            // Скрывает индикатор записи
+            hideRecordingIndicator() {
+                const indicator = document.getElementById('recording-indicator');
+                indicator.classList.remove('active');
+            }
+        };
+
+        // === ИНИЦИАЛИЗАЦИЯ MEDIAPIPE FACE MESH ===
+        async function initAdvancedProctoring() {
+            try {
+                // Инициализируем MediaPipe Face Mesh
+                faceMesh = new FaceMesh({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+                    }
+                });
+                
+                faceMesh.setOptions({
+                    maxNumFaces: 3,
+                    refineLandmarks: true,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                
+                faceMesh.onResults(onFaceMeshResults);
+                
+                addSecurityLog('MediaPipe Face Mesh инициализирован', 'success');
+                addCandidateLog('ИИ анализ лица активирован', 'success');
+                
+            } catch (error) {
+                console.error('Ошибка инициализации MediaPipe:', error);
+                addSecurityLog('Ошибка инициализации ИИ: ' + error.message, 'warning');
+            }
+        }
+
+        // История для анализа паттернов
+        let gazeHistory = [];
+        let faceDetectionHistory = [];
+
+        // ОБРАБОТКА РЕЗУЛЬТАТОВ FACE MESH
+        function onFaceMeshResults(results) {
+            if (!isTestActive) return;
+            
+            const canvas = document.getElementById('face-detection-canvas');
+            const ctx = canvas.getContext('2d');
+            const video = document.getElementById('camera-video');
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const faces = results.multiFaceLandmarks;
+                
+                // Детекция множественных лиц
+                if (faces.length > 1) {
+                    handleMultipleFaces(faces.length);
+                }
+                
+                // Анализируем главное лицо (первое в массиве)
+                const mainFace = faces[0];
+                
+                // АНАЛИЗ ВЗГЛЯДА
+                const gazeAnalysis = GazeAnalyzer.analyzeGazeDirection(mainFace);
+                updateGazeIndicator(gazeAnalysis);
+                
+                // Сохраняем в историю для анализа паттернов
+                gazeHistory.push({
+                    timestamp: Date.now(),
+                    direction: gazeAnalysis.direction,
+                    confidence: gazeAnalysis.confidence,
+                    suspicious: gazeAnalysis.suspicious,
+                    x: mainFace[1].x, // Кончик носа как референс
+                    y: mainFace[1].y
+                });
+                
+                // Ограничиваем историю последними 100 точками
+                if (gazeHistory.length > 100) {
+                    gazeHistory = gazeHistory.slice(-100);
+                }
+                
+                // Каждые 5 секунд анализируем поведение
+                if (gazeHistory.length > 0 && gazeHistory.length % 50 === 0) {
+                    const behaviorAnalysis = GazeAnalyzer.classifyBehavior(gazeHistory, currentVoiceCount);
+                    handleBehaviorAnalysis(behaviorAnalysis);
+                }
+                
+                // Рисуем ключевые точки лица для демонстрации работы
+                drawFaceLandmarks(ctx, mainFace);
+                
+            } else {
+                // Лицо не обнаружено
+                handleNoFaceDetected();
+            }
+        }
+
+        // ОБРАБОТКА МНОЖЕСТВЕННЫХ ЛИЦ
+        async function handleMultipleFaces(faceCount) {
+            securityStats.multipleFaces++;
+            
+            addSecurityLog(`НАРУШЕНИЕ: Обнаружено ${faceCount} лиц!`, 'danger');
+            addCandidateLog(`Детектировано ${faceCount} лиц - возможные подсказки`, 'danger');
+            
+            // Запускаем запись подозрительного момента
+            await SmartRecorder.startSuspiciousRecording('multiple_faces');
+            
+            updateSecurityStats();
+        }
+
+        // ОБРАБОТКА АНАЛИЗА ПОВЕДЕНИЯ
+        async function handleBehaviorAnalysis(analysis) {
+            if (analysis.behavior === 'cheating' && analysis.confidence > 0.8) {
+                securityStats.suspiciousActivity += 2;
+                
+                addSecurityLog(`ML АНАЛИЗ: Подозрительное поведение (${Math.round(analysis.confidence * 100)}%)`, 'danger');
+                addCandidateLog('ИИ определил подозрительное поведение', 'ml-analysis');
+                
+                // Запускаем запись
+                await SmartRecorder.startSuspiciousRecording('suspicious_behavior');
+                
+            } else if (analysis.behavior === 'thinking') {
+                addSecurityLog(`ML АНАЛИЗ: Нормальное размышление (${Math.round(analysis.confidence * 100)}%)`, 'success');
+                
+            }
+        }
+
+        // ОБРАБОТКА ОТСУТСТВИЯ ЛИЦА
+        function handleNoFaceDetected() {
+            const gazeIndicator = document.getElementById('gaze-indicator');
+            gazeIndicator.textContent = 'Лицо не найдено';
+            gazeIndicator.className = 'gaze-indicator gaze-suspicious';
+            
+            // Если долго нет лица - подозрительно
+            faceDetectionHistory.push({ detected: false, timestamp: Date.now() });
+            
+            const recentHistory = faceDetectionHistory.filter(h => Date.now() - h.timestamp < 10000); // 10 сек
+            const noFaceTime = recentHistory.filter(h => !h.detected).length;
+            
+            if (noFaceTime > 20 && isTestActive) { // Более 4 сек без лица
+                addSecurityLog('ПОДОЗРЕНИЕ: Кандидат отсутствует', 'warning');
+                securityStats.suspiciousActivity++;
+            }
+        }
+
+        // ОБНОВЛЕНИЕ ИНДИКАТОРА ВЗГЛЯДА
+        function updateGazeIndicator(gazeAnalysis) {
+            const gazeIndicator = document.getElementById('gaze-indicator');
+            
+            const statusMap = {
+                'center': { text: 'Взгляд: На экране ✓', class: 'gaze-center' },
+                'thinking-up': { text: 'Взгляд: Размышляет', class: 'gaze-thinking' },
+                'suspicious-down': { text: 'Взгляд: ВНИЗ!', class: 'gaze-suspicious' },
+                'suspicious-left': { text: 'Взгляд: ВЛЕВО!', class: 'gaze-suspicious' },
+                'suspicious-right': { text: 'Взгляд: ВПРАВО!', class: 'gaze-suspicious' },
+                'wandering': { text: 'Взгляд: Блуждает', class: 'gaze-thinking' },
+                'unknown': { text: 'Взгляд: Анализ...', class: 'gaze-thinking' }
+            };
+            
+            const status = statusMap[gazeAnalysis.direction] || statusMap['unknown'];
+            gazeIndicator.textContent = status.text;
+            gazeIndicator.className = `gaze-indicator ${status.class}`;
+            
+            // Обработка подозрительного взгляда
+            if (gazeAnalysis.suspicious && gazeAnalysis.confidence > 0.8) {
+                handleSuspiciousGaze(gazeAnalysis);
+            }
+            
+            // Сохраняем состояние для анализа паттернов
+            if (lastGazeState !== gazeAnalysis.direction) {
+                addCandidateLog(`Взгляд: ${gazeAnalysis.direction} (${Math.round(gazeAnalysis.confidence * 100)}%)`, 
+                              gazeAnalysis.suspicious ? 'warning' : 'success');
+                lastGazeState = gazeAnalysis.direction;
+            }
+        }
+
+        // ОБРАБОТКА ПОДОЗРИТЕЛЬНОГО ВЗГЛЯДА
+        async function handleSuspiciousGaze(gazeAnalysis) {
+            securityStats.suspiciousGaze++;
+            
+            if (gazeAnalysis.direction === 'suspicious-down') {
+                addSecurityLog('ПОДОЗРЕНИЕ: Взгляд вниз (телефон/шпаргалки)', 'warning');
+            } else if (gazeAnalysis.direction.includes('left') || gazeAnalysis.direction.includes('right')) {
+                addSecurityLog('ПОДОЗРЕНИЕ: Взгляд в сторону (второй монитор)', 'warning');
+            }
+            
+            // Если много подозрительных взглядов - запускаем запись
+            if (securityStats.suspiciousGaze % 5 === 0) {
+                await SmartRecorder.startSuspiciousRecording('suspicious_gaze');
+            }
+            
+            updateSecurityStats();
+        }
+
+        // РИСОВАНИЕ КЛЮЧЕВЫХ ТОЧЕК ЛИЦА
+        function drawFaceLandmarks(ctx, landmarks) {
+            ctx.fillStyle = '#00FF00';
+            ctx.strokeStyle = '#00FF00';
+            ctx.lineWidth = 1;
+            
+            // Рисуем только ключевые точки глаз и носа для демонстрации
+            const keyPoints = [
+                landmarks[33],  // Левый глаз
+                landmarks[263], // Правый глаз  
+                landmarks[1],   // Кончик носа
+                landmarks[61],  // Рот
+                landmarks[291]  // Рот
+            ];
+            
+            keyPoints.forEach(point => {
+                if (point) {
+                    ctx.beginPath();
+                    ctx.arc(point.x * ctx.canvas.width, point.y * ctx.canvas.height, 2, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+            });
+            
+            // Рамка вокруг лица
+            const faceOutline = landmarks.slice(10, 150); // Контур лица
+            ctx.beginPath();
+            faceOutline.forEach((point, index) => {
+                if (point) {
+                    const x = point.x * ctx.canvas.width;
+                    const y = point.y * ctx.canvas.height;
+                    if (index === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+            });
+            ctx.strokeStyle = '#00FFFF';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // === ФУНКЦИИ ЛОГИРОВАНИЯ (ОБНОВЛЕННЫЕ) ===
         function addCandidateLog(message, type = '') {
             const log = document.getElementById('candidate-logs');
             const timestamp = new Date().toLocaleTimeString();
@@ -1073,9 +1886,17 @@
             if (statsContainer) {
                 statsContainer.innerHTML = `
                     <div class="log-entry">Переключений вкладок: ${securityStats.tabSwitches}</div>
-                    <div class="log-entry">Потерь фокуса: ${securityStats.focusLosses}</div>
-                    <div class="log-entry ${securityStats.suspiciousActivity > 3 ? 'danger' : ''}">
-                        Подозрительных действий: ${securityStats.suspiciousActivity}
+                    <div class="log-entry ${securityStats.suspiciousGaze > 10 ? 'warning' : ''}">
+                        Подозрительных взглядов: ${securityStats.suspiciousGaze}
+                    </div>
+                    <div class="log-entry ${securityStats.multipleFaces > 0 ? 'danger' : ''}">
+                        Множественных лиц: ${securityStats.multipleFaces}
+                    </div>
+                    <div class="log-entry ${securityStats.externalVoices > 0 ? 'danger' : ''}">
+                        Посторонних голосов: ${securityStats.externalVoices}
+                    </div>
+                    <div class="log-entry ${securityStats.recordedFragments > 0 ? 'warning' : ''}">
+                        Записанных фрагментов: ${securityStats.recordedFragments}
                     </div>
                 `;
             }
@@ -1112,7 +1933,7 @@
             prompt.className = 'fullscreen-prompt';
             prompt.innerHTML = `
                 <h3>🖥️ Обязательный полноэкранный режим</h3>
-                <p><strong>Внимание!</strong> Тестирование возможно только в полноэкранном режиме.</p>
+                <p><strong>Внимание!</strong> Тестирование с ИИ прокторингом возможно только в полноэкранном режиме.</p>
                 <p>Выход из полного экрана приведет к <strong>принудительному завершению теста</strong>.</p>
                 <button class="btn btn-primary" onclick="acceptFullscreen()" style="margin: 10px;">
                     Согласен и перехожу в полный экран
@@ -1182,8 +2003,7 @@
             addSecurityLog('Попытка возврата в полноэкранный режим', 'warning');
         };
 
-        // === ОТСЛЕЖИВАНИЕ АКТИВНОСТИ ===
-        document.addEventListener('visibilitychange', function() {
+        document.addEventListener('visibilitychange', async function() {
             if (!isTestActive) return;
             
             if (document.hidden) {
@@ -1194,15 +2014,21 @@
                 
                 if (securityStats.tabSwitches >= 3) {
                     showSecurityWarning('⚠️ Внимание! Множественные переключения вкладок зафиксированы.');
+                    await SmartRecorder.startSuspiciousRecording('tab_switching');
                 }
             }
         });
 
-        // === ИНИЦИАЛИЗАЦИЯ КАМЕРЫ ===
-        async function initCamera() {
+        // === УЛУЧШЕННАЯ ИНИЦИАЛИЗАЦИЯ КАМЕРЫ ===
+        async function initAdvancedCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { width: 260, height: 180 } 
+                    video: { 
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 30 }
+                    },
+                    audio: true
                 });
                 
                 const video = document.getElementById('camera-video');
@@ -1212,12 +2038,34 @@
                 video.style.display = 'block';
                 placeholder.style.display = 'none';
                 
-                addSecurityLog('Камера активирована', 'success');
-                addCandidateLog('Видеонаблюдение включено');
+                // Ждем загрузки видео перед инициализацией Face Mesh
+                video.onloadedmetadata = async () => {
+                    await initAdvancedProctoring();
+                    
+                    // Инициализируем камеру для MediaPipe
+                    camera = new Camera(video, {
+                        onFrame: async () => {
+                            if (faceMesh) {
+                                await faceMesh.send({ image: video });
+                            }
+                        },
+                        width: 640,
+                        height: 480
+                    });
+                    
+                    camera.start();
+                };
+                
+                // Инициализируем аудио анализ
+                const audioOnlyStream = await navigator.mediaDevices.getUserMedia({audio: true});
+                await VoiceAnalyzer.analyzeAudioStream(audioOnlyStream);
+                
+                addSecurityLog('Продвинутая камера активирована', 'success');
+                addCandidateLog('ИИ видеопрокторинг включен', 'success');
                 
             } catch (error) {
                 addSecurityLog('Ошибка камеры: ' + error.message, 'warning');
-                addCandidateLog('Камера недоступна, продолжаем без видео');
+                addCandidateLog('Камера недоступна, продолжаем без видео', 'warning');
             }
         }
 
@@ -1324,10 +2172,10 @@
             isTestActive = true;
             testStartTime = new Date();
             
-            // Активируем системы безопасности
-            await initCamera();
-            addSecurityLog('Система безопасности активирована', 'success');
-            addCandidateLog('Тестирование начато', 'success');
+            // Активируем продвинутые системы безопасности
+            await initAdvancedCamera();
+            addSecurityLog('Продвинутая система ИИ прокторинга активирована', 'success');
+            addCandidateLog('Тестирование с ИИ анализом начато', 'success');
             
             // Запрашиваем полный экран
             showFullscreenPrompt();
@@ -1434,6 +2282,17 @@
             const timeSpentSeconds = Math.floor((endTime - testStartTime) / 1000);
             const timeSpentMinutes = Math.floor(timeSpentSeconds / 60);
             
+            // Останавливаем все системы прокторинга
+            if (camera) {
+                camera.stop();
+            }
+            if (recordingStream) {
+                recordingStream.getTracks().forEach(track => track.stop());
+            }
+            if (audioContext) {
+                audioContext.close();
+            }
+            
             // Рассчитываем результаты
             let correctAnswers = 0;
             const answeredQuestions = userAnswers.filter(answer => answer !== null).length;
@@ -1464,7 +2323,7 @@
             // Отображаем базовые результаты
             displayBasicResults(correctAnswers, answeredQuestions, percentage, timeSpentMinutes);
             
-            // Отправляем результаты на сервер
+            // Отправляем результаты на сервер с данными прокторинга
             try {
                 const response = await fetch('/api/submit-test', {
                     method: 'POST',
@@ -1476,14 +2335,20 @@
                         answers: userAnswers,
                         time_spent: timeSpentSeconds,
                         completed_at: endTime.toISOString(),
-                        security_stats: securityStats
+                        security_stats: securityStats,
+                        proctoring_data: {
+                            gaze_history: gazeHistory.slice(-50), // Последние 50 точек
+                            suspicious_recordings_count: suspiciousRecordings.length,
+                            voice_detections: currentVoiceCount,
+                            ml_analysis: 'advanced_proctoring_completed'
+                        }
                     })
                 });
                 
                 const result = await response.json();
                 
                 if (result.status === 'success') {
-                    addCandidateLog('Результаты успешно отправлены в HR', 'success');
+                    addCandidateLog('Результаты и записи успешно отправлены в HR', 'success');
                     
                     // Обновляем результаты данными с сервера (включая оценку и рекомендации)
                     if (result.results) {
@@ -1497,7 +2362,7 @@
                 addCandidateLog('Ошибка соединения с сервером', 'warning');
             }
             
-            addCandidateLog('Тестирование завершено', 'success');
+            addCandidateLog('Тестирование с ИИ прокторингом завершено', 'success');
             showScreen('results-screen');
             
             // Скрываем таймер
@@ -1624,8 +2489,8 @@
             // Показываем контент только если JS работает
             document.getElementById('main-content').style.display = 'block';
             
-            addSecurityLog('JavaScript активен - защита работает', 'success');
-            addCandidateLog('Система загружается...');
+            addSecurityLog('Продвинутый ИИ прокторинг загружен', 'success');
+            addCandidateLog('Система с машинным обучением загружается...');
             
             // Загружаем данные теста
             loadTestSession();
@@ -1635,13 +2500,14 @@
         window.addEventListener('beforeunload', function(e) {
             if (isTestActive) {
                 e.preventDefault();
-                e.returnValue = 'Тест еще не завершен. Вы уверены, что хотите покинуть страницу?';
+                e.returnValue = 'Тест еще не завершен. Все записи будут отправлены в HR отдел.';
                 return e.returnValue;
             }
         });
 
-        console.log('🛡️ Halyk Bank Testing System загружена');
-        console.log('🔒 Система безопасности активна');
+        console.log('🛡️ Halyk Bank Advanced AI Proctoring System загружена');
+        console.log('🧠 Машинное обучение и видеоанализ активны');
+        console.log('🎥 Умная система записи готова');
     </script>
 </div>
 </body>

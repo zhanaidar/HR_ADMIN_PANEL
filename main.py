@@ -2451,6 +2451,367 @@ async def get_user_statistics(user: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"❌ Ошибка получения статистики: {e}")
         return {}
+    
+    
+# === ПРОДВИНУТЫЙ ВИДЕОПРОКТОРИНГ - ЗАГРУЗКА ЗАПИСЕЙ ===
+
+@app.post("/api/upload-suspicious-recording")
+async def upload_suspicious_recording(
+    request: Request,
+    session_id: str = Form(...),
+    recording_reason: str = Form(...), 
+    recording_file: UploadFile = File(...)
+):
+    """Загрузка записи подозрительного момента с ИИ прокторинга"""
+    user = request.session.get("user")
+    
+    try:
+        # Проверяем что тест-сессия существует
+        test_session = get_test_session_by_id(session_id)
+        if not test_session:
+            return JSONResponse({"error": "Тест-сессия не найдена"}, status_code=404)
+        
+        # Создаем папку для записей если её нет
+        recordings_dir = UPLOADS_DIR / "suspicious_recordings" / session_id
+        recordings_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Генерируем имя файла с timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        candidate_name = test_session.get("candidate", {}).get("full_name", "unknown")
+        safe_candidate_name = "".join(c for c in candidate_name if c.isalnum() or c in (' ', '-', '_')).rstrip()[:20]
+        
+        filename = f"{timestamp}_{recording_reason}_{safe_candidate_name}.webm"
+        file_path = recordings_dir / filename
+        
+        # Проверяем размер файла (максимум 50MB для видео)
+        content = await recording_file.read()
+        if len(content) > 50 * 1024 * 1024:  # 50MB
+            return JSONResponse({"error": "Файл слишком большой (максимум 50MB)"}, status_code=400)
+        
+        # Проверяем тип файла
+        if not recording_file.content_type.startswith('video/'):
+            return JSONResponse({"error": "Только видео файлы разрешены"}, status_code=400)
+        
+        # Сохраняем файл
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        # Обновляем метаданные тест-сессии с информацией о записи
+        await update_test_session_recordings(session_id, {
+            "filename": filename,
+            "reason": recording_reason,
+            "timestamp": timestamp,
+            "size": len(content),
+            "path": str(file_path)
+        })
+        
+        logger.info(f"📹 Запись сохранена: {filename} ({len(content)} байт) - {recording_reason}")
+        
+        return JSONResponse({
+            "success": True,
+            "filename": filename,
+            "size": len(content),
+            "reason": recording_reason,
+            "message": "Запись подозрительного момента сохранена"
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения записи: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/test-session-recordings/{session_id}")
+async def get_test_session_recordings(session_id: str, request: Request):
+    """Получение всех записей подозрительных моментов для тест-сессии"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    # Только супер админ может просматривать записи
+    if not can_user_view_questions(user["role"]):
+        return JSONResponse({"error": "Доступ запрещен"}, status_code=403)
+    
+    try:
+        # Проверяем что тест-сессия существует
+        test_session = get_test_session_by_id(session_id)
+        if not test_session:
+            return JSONResponse({"error": "Тест-сессия не найдена"}, status_code=404)
+        
+        recordings_dir = UPLOADS_DIR / "suspicious_recordings" / session_id
+        
+        if not recordings_dir.exists():
+            return JSONResponse({
+                "success": True,
+                "recordings": [],
+                "session_info": {
+                    "candidate_name": test_session.get("candidate", {}).get("full_name"),
+                    "profession": test_session.get("profession", {}).get("name"),
+                    "status": test_session.get("status"),
+                    "completed_at": test_session.get("completed_at")
+                }
+            })
+        
+        recordings = []
+        total_size = 0
+        
+        for file_path in recordings_dir.glob("*.webm"):
+            file_stat = file_path.stat()
+            file_size = file_stat.st_size
+            total_size += file_size
+            
+            # Парсим информацию из имени файла
+            filename_parts = file_path.stem.split("_", 2)
+            recording_reason = filename_parts[1] if len(filename_parts) > 1 else "unknown"
+            
+            recordings.append({
+                "filename": file_path.name,
+                "reason": recording_reason,
+                "size": file_size,
+                "size_mb": round(file_size / 1024 / 1024, 2),
+                "created": datetime.fromtimestamp(file_stat.st_ctime).isoformat(),
+                "download_url": f"/api/recording/{session_id}/{file_path.name}",
+                "stream_url": f"/api/stream-recording/{session_id}/{file_path.name}"
+            })
+        
+        # Сортируем по времени создания
+        recordings.sort(key=lambda x: x["created"])
+        
+        return JSONResponse({
+            "success": True,
+            "recordings": recordings,
+            "total_recordings": len(recordings),
+            "total_size_mb": round(total_size / 1024 / 1024, 2),
+            "session_info": {
+                "candidate_name": test_session.get("candidate", {}).get("full_name"),
+                "profession": test_session.get("profession", {}).get("name"),
+                "level": test_session.get("level"),
+                "status": test_session.get("status"),
+                "completed_at": test_session.get("completed_at"),
+                "security_stats": test_session.get("security_stats", {})
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения записей для {session_id}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/recording/{session_id}/{filename}")
+async def download_recording(session_id: str, filename: str, request: Request):
+    """Скачивание записи подозрительного момента"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    # Только супер админ может скачивать записи
+    if not can_user_view_questions(user["role"]):
+        return JSONResponse({"error": "Доступ запрещен"}, status_code=403)
+    
+    try:
+        # Проверяем безопасность пути
+        if ".." in filename or "/" in filename:
+            return JSONResponse({"error": "Недопустимое имя файла"}, status_code=400)
+        
+        file_path = UPLOADS_DIR / "suspicious_recordings" / session_id / filename
+        
+        if not file_path.exists():
+            return JSONResponse({"error": "Файл не найден"}, status_code=404)
+        
+        # Логируем скачивание
+        logger.info(f"📥 Скачивание записи: {filename} пользователем {user['name']}")
+        
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type='video/webm'
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка скачивания записи: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/stream-recording/{session_id}/{filename}")
+async def stream_recording(session_id: str, filename: str, request: Request):
+    """Потоковое воспроизведение записи в браузере"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    # Только супер админ может просматривать записи
+    if not can_user_view_questions(user["role"]):
+        return JSONResponse({"error": "Доступ запрещен"}, status_code=403)
+    
+    try:
+        # Проверяем безопасность пути
+        if ".." in filename or "/" in filename:
+            return JSONResponse({"error": "Недопустимое имя файла"}, status_code=400)
+        
+        file_path = UPLOADS_DIR / "suspicious_recordings" / session_id / filename
+        
+        if not file_path.exists():
+            return JSONResponse({"error": "Файл не найден"}, status_code=404)
+        
+        # Логируем просмотр
+        logger.info(f"📺 Просмотр записи: {filename} пользователем {user['name']}")
+        
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            path=file_path,
+            media_type='video/webm',
+            headers={"Content-Disposition": f"inline; filename={filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка стриминга записи: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.delete("/api/recording/{session_id}/{filename}")
+async def delete_recording(session_id: str, filename: str, request: Request):
+    """Удаление записи подозрительного момента - только для супер админа"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    # Только супер админ может удалять записи
+    if user["role"] != "super_admin":
+        return JSONResponse({"error": "Только супер админ может удалять записи"}, status_code=403)
+    
+    try:
+        # Проверяем безопасность пути
+        if ".." in filename or "/" in filename:
+            return JSONResponse({"error": "Недопустимое имя файла"}, status_code=400)
+        
+        file_path = UPLOADS_DIR / "suspicious_recordings" / session_id / filename
+        
+        if not file_path.exists():
+            return JSONResponse({"error": "Файл не найден"}, status_code=404)
+        
+        # Удаляем файл
+        file_path.unlink()
+        
+        logger.info(f"🗑️ Запись удалена: {filename} пользователем {user['name']}")
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"Запись {filename} успешно удалена"
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка удаления записи: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+
+async def update_test_session_recordings(session_id: str, recording_info: Dict[str, Any]):
+    """Обновляем метаданные тест-сессии с информацией о записи"""
+    try:
+        sessions_file = DATA_DIR / "test_sessions.json"
+        
+        if not sessions_file.exists():
+            return
+        
+        with open(sessions_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Находим и обновляем тест-сессию
+        for session in data.get("test_sessions", []):
+            if session["test_session_id"] == session_id:
+                if "proctoring_recordings" not in session:
+                    session["proctoring_recordings"] = []
+                
+                session["proctoring_recordings"].append({
+                    "filename": recording_info["filename"],
+                    "reason": recording_info["reason"],
+                    "timestamp": recording_info["timestamp"],
+                    "size": recording_info["size"]
+                })
+                break
+        
+        # Сохраняем обновленные данные
+        with open(sessions_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            
+    except Exception as e:
+        logger.error(f"❌ Ошибка обновления метаданных записи: {e}")
+
+
+@app.get("/api/proctoring-stats")
+async def get_proctoring_stats(request: Request):
+    """Получение общей статистики по видеопрокторингу"""
+    user = request.session.get("user")
+    if not user:
+        return JSONResponse({"error": "Не авторизован"}, status_code=401)
+    
+    if not can_user_view_questions(user["role"]):
+        return JSONResponse({"error": "Доступ запрещен"}, status_code=403)
+    
+    try:
+        sessions_file = DATA_DIR / "test_sessions.json"
+        
+        if not sessions_file.exists():
+            return JSONResponse({
+                "total_sessions": 0,
+                "sessions_with_recordings": 0,
+                "total_recordings": 0,
+                "violation_stats": {}
+            })
+        
+        with open(sessions_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        test_sessions = data.get("test_sessions", [])
+        total_sessions = len(test_sessions)
+        sessions_with_recordings = 0
+        total_recordings = 0
+        violation_stats = {
+            "multiple_faces": 0,
+            "suspicious_gaze": 0,
+            "multiple_voices": 0,
+            "tab_switching": 0,
+            "suspicious_behavior": 0
+        }
+        
+        for session in test_sessions:
+            recordings = session.get("proctoring_recordings", [])
+            if recordings:
+                sessions_with_recordings += 1
+                total_recordings += len(recordings)
+                
+                # Подсчитываем типы нарушений
+                for recording in recordings:
+                    reason = recording.get("reason", "")
+                    if reason in violation_stats:
+                        violation_stats[reason] += 1
+        
+        # Подсчитываем общий размер всех записей
+        recordings_dir = UPLOADS_DIR / "suspicious_recordings"
+        total_size_bytes = 0
+        
+        if recordings_dir.exists():
+            for session_dir in recordings_dir.iterdir():
+                if session_dir.is_dir():
+                    for file_path in session_dir.glob("*.webm"):
+                        total_size_bytes += file_path.stat().st_size
+        
+        return JSONResponse({
+            "success": True,
+            "stats": {
+                "total_sessions": total_sessions,
+                "sessions_with_recordings": sessions_with_recordings,
+                "total_recordings": total_recordings,
+                "total_size_mb": round(total_size_bytes / 1024 / 1024, 2),
+                "violation_stats": violation_stats,
+                "violation_rate": round((sessions_with_recordings / total_sessions * 100), 1) if total_sessions > 0 else 0
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения статистики прокторинга: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 # === ЗАПУСК СЕРВЕРА ===
 
