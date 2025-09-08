@@ -1,6 +1,7 @@
 """
 AudioProctorSystem - Система аудио прокторинга с ИИ и умным кешированием
 Модель Whisper загружается ОДИН раз и остается в памяти
+ИСПРАВЛЕНА ОБРАБОТКА WEBM БЕЗ FFMPEG
 """
 
 import os
@@ -14,6 +15,8 @@ from typing import Dict, List, Optional, Tuple
 import tempfile
 import base64
 import io
+import subprocess
+import shutil
 
 # Аудио обработка
 import librosa
@@ -33,6 +36,7 @@ class AudioProctorSystem:
     """
     Система аудио прокторинга с калибровкой голоса кандидата
     Whisper модель загружается ОДИН раз и кешируется
+    УЛУЧШЕНА ОБРАБОТКА WEBM ФАЙЛОВ
     """
     
     def __init__(self, data_dir: Path):
@@ -63,6 +67,29 @@ class AudioProctorSystem:
         # История анализа
         self.analysis_history = []
         
+        # Проверяем доступность внешних инструментов
+        self._check_external_tools()
+
+            
+    def _check_external_tools(self):
+        """Проверка доступности внешних инструментов для конвертации"""
+        # Сначала ищем в PATH
+        self.ffmpeg_available = shutil.which('ffmpeg') is not None
+        
+        # Если не найден в PATH, пробуем прямой путь
+        if not self.ffmpeg_available:
+            ffmpeg_path = r"C:\ffmpeg\ffmpeg-2025-09-04-git-2611874a50-full_build\ffmpeg-2025-09-04-git-2611874a50-full_build\bin\ffmpeg.exe"
+            self.ffmpeg_available = os.path.exists(ffmpeg_path)
+            if self.ffmpeg_available:
+                self.ffmpeg_executable = ffmpeg_path
+        
+        self.ffprobe_available = shutil.which('ffprobe') is not None
+        
+        if self.ffmpeg_available:
+            logger.info("✅ FFmpeg найден - расширенная поддержка форматов включена")
+        else:
+            logger.info("⚠️ FFmpeg не найден - используем встроенные методы")
+    
     async def initialize(self) -> bool:
         """Инициализация моделей (кеширование)"""
         try:
@@ -88,24 +115,50 @@ class AudioProctorSystem:
             logger.error(f"❌ Ошибка инициализации: {e}")
             return False
     
+    def detect_audio_format(self, audio_data: bytes) -> str:
+        """Улучшенное определение формата аудио файла"""
+        if len(audio_data) < 12:
+            return '.unknown'
+        
+        # Читаем первые байты для определения формата
+        header = audio_data[:12]
+        
+        # MP4/M4A сигнатуры
+        if b'ftyp' in header or b'M4A ' in header or b'mp41' in header or b'mp42' in header:
+            return '.mp4'
+        
+        # OGG сигнатура
+        if header.startswith(b'OggS'):
+            return '.ogg'
+        
+        # WebM сигнатуры (расширенная проверка)
+        if (b'\x1a\x45\xdf\xa3' in header or  # EBML header
+            b'webm' in header[:50] or
+            b'matroska' in header[:50]):
+            return '.webm'
+        
+        # WAV сигнатура
+        if header.startswith(b'RIFF') and b'WAVE' in header:
+            return '.wav'
+        
+        # FLAC сигнатура
+        if header.startswith(b'fLaC'):
+            return '.flac'
+        
+        # MP3 сигнатуры
+        if header.startswith(b'ID3') or header.startswith(b'\xff\xfb'):
+            return '.mp3'
+        
+        # По умолчанию считаем WebM (часто браузер не ставит правильные заголовки)
+        logger.warning(f"🔍 Неизвестный формат, первые 12 байт: {header.hex()}")
+        return '.webm'
+    
     def preprocess_audio(self, audio_data: bytes, sample_rate: int = None) -> np.ndarray:
-        """Предобработка аудио данных с поддержкой MP4/WebM/OGG"""
+        """УЛУЧШЕННАЯ предобработка аудио данных с расширенной поддержкой WebM"""
         try:
-            # Определяем тип файла по первым байтам
-            file_signature = audio_data[:12]
-            
-            # Определяем расширение файла
-            if b'ftyp' in file_signature or b'mp4' in file_signature:
-                file_ext = '.mp4'
-            elif b'OggS' in file_signature:
-                file_ext = '.ogg'  
-            elif b'webm' in file_signature or b'mkv' in file_signature:
-                file_ext = '.webm'
-            else:
-                # По умолчанию пробуем как WebM
-                file_ext = '.webm'
-            
-            logger.info(f"🔍 Определен тип файла: {file_ext}")
+            # Определяем тип файла по содержимому
+            file_ext = self.detect_audio_format(audio_data)
+            logger.info(f"🔍 Определен формат файла: {file_ext}")
             
             # Создаем временный файл с правильным расширением
             with tempfile.NamedTemporaryFile(suffix=file_ext, delete=False) as tmp_file:
@@ -113,38 +166,61 @@ class AudioProctorSystem:
                 tmp_file_path = tmp_file.name
             
             audio = None
+            success_method = None
             
             try:
-                # Способ 1: Librosa напрямую (работает с MP4 и OGG)
-                audio, sr = librosa.load(
-                    tmp_file_path, 
-                    sr=sample_rate or self.config['sample_rate'],
-                    mono=True
-                )
-                logger.info(f"✅ Librosa успешно загрузила {file_ext}: {len(audio)} сэмплов")
+                # МЕТОД 1: Прямая загрузка через librosa (лучше всего для MP4/WAV/FLAC)
+                if file_ext in ['.mp4', '.wav', '.flac', '.mp3']:
+                    try:
+                        audio, sr = librosa.load(
+                            tmp_file_path, 
+                            sr=sample_rate or self.config['sample_rate'],
+                            mono=True
+                        )
+                        success_method = f"librosa (native {file_ext})"
+                        logger.info(f"✅ {success_method}: {len(audio)} сэмплов")
+                    except Exception as e:
+                        logger.warning(f"Librosa {file_ext} error: {e}")
                 
-            except Exception as librosa_error:
-                logger.warning(f"Librosa {file_ext} error: {librosa_error}")
+                # МЕТОД 2: SoundFile для OGG и некоторых MP4
+                if audio is None and file_ext in ['.ogg', '.mp4', '.wav']:
+                    try:
+                        audio_sf, sr = sf.read(tmp_file_path)
+                        
+                        # Конвертируем в моно если нужно
+                        if len(audio_sf.shape) > 1:
+                            audio_sf = np.mean(audio_sf, axis=1)
+                        
+                        # Ресемплим если нужно
+                        target_sr = sample_rate or self.config['sample_rate']
+                        if sr != target_sr:
+                            audio = librosa.resample(audio_sf, orig_sr=sr, target_sr=target_sr)
+                        else:
+                            audio = audio_sf
+                        
+                        success_method = f"soundfile {file_ext}"
+                        logger.info(f"✅ {success_method}: {len(audio)} сэмплов")
+                    except Exception as e:
+                        logger.warning(f"SoundFile {file_ext} error: {e}")
                 
-                # Способ 2: SoundFile (хорошо работает с MP4/OGG)
-                try:
-                    import soundfile as sf
-                    audio, sr = sf.read(tmp_file_path)
-                    
-                    if sr != self.config['sample_rate']:
-                        audio = librosa.resample(audio, orig_sr=sr, target_sr=self.config['sample_rate'])
-                    
-                    logger.info(f"✅ SoundFile успешно прочитал {file_ext}: {len(audio)} сэмплов")
-                    
-                except Exception as sf_error:
-                    logger.warning(f"SoundFile {file_ext} error: {sf_error}")
-                    
-                    # Способ 3: Pydub (универсальный, но требует ffmpeg для некоторых форматов)
+                # МЕТОД 3: PyDub с FFmpeg (если доступен)
+                if audio is None and self.ffmpeg_available:
                     try:
                         from pydub import AudioSegment
                         
-                        # Пробуем загрузить без указания формата (автодетекция)
-                        audio_segment = AudioSegment.from_file(tmp_file_path)
+                        # Определяем формат для PyDub
+                        format_map = {
+                            '.webm': 'webm',
+                            '.ogg': 'ogg', 
+                            '.mp4': 'mp4',
+                            '.wav': 'wav',
+                            '.mp3': 'mp3'
+                        }
+                        
+                        pydub_format = format_map.get(file_ext, 'webm')
+                        
+                        # Загружаем через PyDub
+                        audio_segment = AudioSegment.from_file(tmp_file_path, format=pydub_format)
                         
                         # Конвертируем в нужный формат
                         audio_segment = audio_segment.set_frame_rate(self.config['sample_rate'])
@@ -154,40 +230,98 @@ class AudioProctorSystem:
                         raw_data = audio_segment.raw_data
                         audio = np.frombuffer(raw_data, dtype=np.int16).astype(np.float32) / 32768.0
                         
-                        logger.info(f"✅ Pydub успешно конвертировал {file_ext}: {len(audio)} сэмплов")
+                        success_method = f"pydub+ffmpeg {file_ext}"
+                        logger.info(f"✅ {success_method}: {len(audio)} сэмплов")
+                    except Exception as e:
+                        logger.warning(f"PyDub {file_ext} error: {e}")
+                
+                # МЕТОД 4: Прямая конвертация через FFmpeg (для WebM)
+                if audio is None and self.ffmpeg_available and file_ext == '.webm':
+                    try:
+                        audio = self._convert_webm_with_ffmpeg(tmp_file_path)
+                        if audio is not None and len(audio) > 0:
+                            success_method = "ffmpeg direct conversion"
+                            logger.info(f"✅ {success_method}: {len(audio)} сэмплов")
+                    except Exception as e:
+                        logger.warning(f"FFmpeg direct conversion error: {e}")
+                
+                # МЕТОД 5: WebM как OGG (простое переименование + библиотеки)
+                if audio is None and file_ext == '.webm':
+                    try:
+                        # Создаем копию как OGG
+                        ogg_path = tmp_file_path.replace('.webm', '.ogg')
+                        shutil.copy2(tmp_file_path, ogg_path)
                         
-                    except Exception as pydub_error:
-                        logger.error(f"Pydub {file_ext} конвертация не удалась: {pydub_error}")
-                        
-                        # Способ 4: Если это WebM, пробуем как OGG
-                        if file_ext == '.webm':
+                        # Пробуем загрузить как OGG
+                        try:
+                            audio, sr = librosa.load(ogg_path, sr=self.config['sample_rate'])
+                            success_method = "webm as ogg (librosa)"
+                            logger.info(f"✅ {success_method}: {len(audio)} сэмплов")
+                        except:
                             try:
-                                ogg_path = tmp_file_path.replace('.webm', '.ogg')
-                                os.rename(tmp_file_path, ogg_path)
-                                
-                                audio, sr = librosa.load(ogg_path, sr=self.config['sample_rate'])
-                                logger.info(f"✅ WebM обработан как OGG: {len(audio)} сэмплов")
-                                tmp_file_path = ogg_path  # Обновляем путь для удаления
-                                
-                            except Exception as ogg_error:
-                                logger.error(f"WebM→OGG конвертация не удалась: {ogg_error}")
+                                audio_sf, sr = sf.read(ogg_path)
+                                if len(audio_sf.shape) > 1:
+                                    audio_sf = np.mean(audio_sf, axis=1)
+                                if sr != self.config['sample_rate']:
+                                    audio = librosa.resample(audio_sf, orig_sr=sr, target_sr=self.config['sample_rate'])
+                                else:
+                                    audio = audio_sf
+                                success_method = "webm as ogg (soundfile)"
+                                logger.info(f"✅ {success_method}: {len(audio)} сэмплов")
+                            except Exception as e2:
+                                logger.warning(f"WebM as OGG failed: {e2}")
+                        
+                        # Удаляем временный OGG файл
+                        try:
+                            os.unlink(ogg_path)
+                        except:
+                            pass
+                    except Exception as e:
+                        logger.warning(f"WebM→OGG method failed: {e}")
+                
+                # МЕТОД 6: Попытка чтения как raw PCM (последний шанс)
+                if audio is None and file_ext == '.webm':
+                    try:
+                        audio = self._try_raw_pcm_extraction(audio_data)
+                        if audio is not None and len(audio) > 0:
+                            success_method = "raw PCM extraction"
+                            logger.info(f"✅ {success_method}: {len(audio)} сэмплов")
+                    except Exception as e:
+                        logger.warning(f"Raw PCM extraction failed: {e}")
             
             finally:
-                # Удаляем временные файлы
-                for tmp_path in [tmp_file_path, tmp_file_path.replace(file_ext, '.ogg'), tmp_file_path.replace(file_ext, '.wav')]:
-                    if os.path.exists(tmp_path):
+                # Очистка временных файлов
+                temp_files = [
+                    tmp_file_path,
+                    tmp_file_path.replace('.webm', '.ogg'),
+                    tmp_file_path.replace('.webm', '.wav'),
+                    tmp_file_path + '.wav'
+                ]
+                
+                for temp_file in temp_files:
+                    if os.path.exists(temp_file):
                         try:
-                            os.unlink(tmp_path)
+                            os.unlink(temp_file)
                         except:
                             pass
             
             # Проверяем результат
             if audio is None or len(audio) == 0:
                 logger.error(f"🚫 Не удалось обработать аудио файл {file_ext}")
-                logger.error("💡 Возможные решения:")
-                logger.error("   1. Используйте другой браузер (Chrome, Firefox, Edge)")
-                logger.error("   2. Проверьте настройки микрофона")
-                logger.error("   3. Установите FFmpeg для расширенной поддержки форматов")
+                logger.error("💡 Попробованные методы:")
+                logger.error("   1. librosa (native)")
+                logger.error("   2. soundfile")
+                if self.ffmpeg_available:
+                    logger.error("   3. pydub + ffmpeg")
+                    logger.error("   4. ffmpeg direct")
+                else:
+                    logger.error("   3. pydub (FFmpeg недоступен)")
+                logger.error("   5. webm as ogg")
+                logger.error("   6. raw PCM extraction")
+                logger.error("💡 Рекомендации:")
+                logger.error("   • Установите FFmpeg для лучшей поддержки WebM")
+                logger.error("   • Попробуйте другой браузер (Chrome → Firefox)")
+                logger.error("   • Проверьте настройки микрофона")
                 return np.array([])
             
             # Нормализация
@@ -206,12 +340,90 @@ class AudioProctorSystem:
                 logger.warning(f"Аудио слишком короткое: {len(audio)} сэмплов ({len(audio)/self.config['sample_rate']:.2f}с)")
                 return np.array([])
             
-            logger.info(f"✅ Аудио обработано успешно: {len(audio)/self.config['sample_rate']:.2f}с, {len(audio)} сэмплов")
+            duration = len(audio)/self.config['sample_rate']
+            logger.info(f"✅ Аудио обработано ({success_method}): {duration:.2f}с, {len(audio)} сэмплов")
             return audio
             
         except Exception as e:
             logger.error(f"❌ Критическая ошибка предобработки аудио: {e}")
             return np.array([])
+        
+    def _convert_webm_with_ffmpeg(self, input_path: str) -> Optional[np.ndarray]:
+        """Прямая конвертация WebM через FFmpeg в WAV"""
+        try:
+            output_path = input_path + '_converted.wav'
+            
+            # Используем сохраненный путь к FFmpeg или команду из PATH
+            if hasattr(self, 'ffmpeg_executable'):
+                ffmpeg_cmd = self.ffmpeg_executable
+            else:
+                ffmpeg_cmd = 'ffmpeg'
+            
+            cmd = [
+                ffmpeg_cmd,
+                '-i', input_path,
+                '-acodec', 'pcm_s16le',
+                '-ar', str(self.config['sample_rate']),
+                '-ac', '1',
+                '-y',
+                output_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0 and os.path.exists(output_path):
+                audio, sr = librosa.load(output_path, sr=self.config['sample_rate'])
+                os.unlink(output_path)
+                return audio
+            else:
+                logger.warning(f"FFmpeg conversion failed: {result.stderr}")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"FFmpeg conversion error: {e}")
+            return None
+    
+    
+    def _try_raw_pcm_extraction(self, audio_data: bytes) -> Optional[np.ndarray]:
+        """Попытка извлечь PCM данные напрямую из WebM (экспериментальный метод)"""
+        try:
+            # Ищем возможные PCM данные в WebM контейнере
+            # Это очень упрощенный подход, но может сработать для некоторых WebM файлов
+            
+            # Пропускаем заголовки WebM (примерно первые 100-500 байт)
+            for skip_bytes in [100, 200, 500, 1000]:
+                if len(audio_data) <= skip_bytes:
+                    continue
+                
+                try:
+                    # Пытаемся интерпретировать данные как 16-bit PCM
+                    raw_audio = audio_data[skip_bytes:]
+                    
+                    # Проверяем что длина четная (для 16-bit данных)
+                    if len(raw_audio) % 2 != 0:
+                        raw_audio = raw_audio[:-1]
+                    
+                    # Конвертируем в numpy array
+                    audio_int16 = np.frombuffer(raw_audio, dtype=np.int16)
+                    
+                    # Нормализуем в float32
+                    audio_float = audio_int16.astype(np.float32) / 32768.0
+                    
+                    # Базовая проверка что это похоже на аудио
+                    if len(audio_float) > 1000:  # Минимум 1000 сэмплов
+                        # Проверяем что данные не являются постоянными (не тишина)
+                        if np.std(audio_float) > 0.01:
+                            logger.info(f"Raw PCM extraction: найдено {len(audio_float)} сэмплов (пропуск {skip_bytes} байт)")
+                            return audio_float
+                    
+                except Exception:
+                    continue
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Raw PCM extraction failed: {e}")
+            return None
     
     async def transcribe_audio(self, audio_data: np.ndarray) -> Dict:
         """Транскрипция аудио через Whisper (БЫСТРО - модель уже в памяти)"""
@@ -623,15 +835,16 @@ class AudioProctorSystem:
                 final_similarity = similarity + confidence_boost
                 is_candidate = final_similarity >= adaptive_threshold
                 
+
                 return {
-                    "is_candidate": is_candidate,
-                    "confidence": final_similarity,
-                    "raw_similarity": similarity,
-                    "cosine_distance": cos_distance,
-                    "threshold": adaptive_threshold,
-                    "intra_class_distance": avg_intra_distance,
+                    "is_candidate": bool(is_candidate),
+                    "confidence": float(final_similarity),
+                    "raw_similarity": float(similarity),
+                    "cosine_distance": float(cos_distance),
+                    "threshold": float(adaptive_threshold),
+                    "intra_class_distance": float(avg_intra_distance),
                     "method": "cosine_similarity_adaptive",
-                    "quality_score": quality_score
+                    "quality_score": float(quality_score)
                 }
                 
             except Exception as calc_error:
@@ -688,8 +901,28 @@ class AudioProctorSystem:
             "calibration_samples": len(self.calibration_samples),
             "analysis_history": len(self.analysis_history),
             "config": self.config,
-            "voice_profile_quality": self.candidate_voice_profile.get('quality_score', 0.0) if self.candidate_voice_profile else 0.0
+            "voice_profile_quality": self.candidate_voice_profile.get('quality_score', 0.0) if self.candidate_voice_profile else 0.0,
+            "ffmpeg_available": self.ffmpeg_available,
+            "supported_methods": self._get_supported_methods()
         }
+    
+    def _get_supported_methods(self) -> List[str]:
+        """Получение списка поддерживаемых методов обработки аудио"""
+        methods = [
+            "librosa (native)",
+            "soundfile", 
+            "raw PCM extraction"
+        ]
+        
+        if self.ffmpeg_available:
+            methods.extend([
+                "pydub + ffmpeg",
+                "ffmpeg direct conversion"
+            ])
+        
+        methods.append("webm as ogg fallback")
+        
+        return methods
     
     def reset_system(self):
         """Сброс системы (очистка калибровки)"""

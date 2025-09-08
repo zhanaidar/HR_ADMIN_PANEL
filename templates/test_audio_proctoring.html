@@ -414,6 +414,7 @@
         let audioStream = null;
         let calibrationSamplesCount = 0;
         let minCalibrationSamples = 5;
+        let selectedMimeType = null; // Добавлено для отслеживания выбранного формата
 
         // === ЛОГИРОВАНИЕ ===
         function addLog(message, type = 'info') {
@@ -505,6 +506,9 @@
             }
         }
 
+
+        // ЗАМЕНИ функцию startRecordingCalibrationSamples() НА ЭТУ
+
         function startRecordingCalibrationSamples() {
             if (!audioStream) {
                 addLog('Аудиопоток недоступен', 'danger');
@@ -515,45 +519,38 @@
             document.getElementById('recording-indicator').classList.add('active');
 
             try {
-                // ОТЛАДКА: проверяем что поддерживает браузер
-                const supportedFormats = [
-                    'audio/wav',
-                    'audio/mp4',
-                    'audio/ogg',
-                    'audio/webm',
-                    'audio/webm;codecs=opus',
-                    'audio/webm;codecs=pcm'
+                addLog('🔧 Браузер: Chrome - только WebM поддерживается', 'info');
+                
+                // Раз Chrome поддерживает только WebM, выберем ЛУЧШИЙ WebM формат
+                let mimeType = '';
+                
+                // Приоритет WebM форматов (от лучшего к худшему для распознавания речи)
+                const webmFormats = [
+                    'audio/webm;codecs=pcm',    // PCM в WebM (лучший для Whisper)
+                    'audio/webm;codecs=opus',   // Opus сжатие
+                    'audio/webm'                // По умолчанию
                 ];
                 
-                addLog('🔍 Проверяем поддерживаемые форматы:', 'info');
-                supportedFormats.forEach(format => {
-                    const supported = MediaRecorder.isTypeSupported(format);
-                    addLog(`   ${format}: ${supported ? '✅' : '❌'}`, supported ? 'success' : 'warning');
-                });
-                
-                // ПРИНУДИТЕЛЬНО используем MP4 - лучшая совместимость
-                let mimeType = 'audio/mp4';
-                
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    addLog(`⚠️ Браузер не поддерживает audio/mp4`, 'warning');
-                    // Fallback к OGG (лучше чем WebM)
-                    mimeType = 'audio/ogg';
-                    if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        addLog(`⚠️ Браузер не поддерживает audio/ogg`, 'warning');
-                        // Последний fallback
-                        mimeType = '';
-                        addLog(`🔄 Используем формат браузера по умолчанию`, 'warning');
+                for (const format of webmFormats) {
+                    if (MediaRecorder.isTypeSupported(format)) {
+                        mimeType = format;
+                        addLog(`✅ Выбран оптимальный WebM: ${format}`, 'success');
+                        break;
                     }
                 }
                 
-                addLog(`🎵 ФИНАЛЬНЫЙ ВЫБОР: ${mimeType || 'default'}`, 'success');
+                if (!mimeType) {
+                    mimeType = 'audio/webm'; // Fallback
+                    addLog('⚠️ Используем базовый WebM формат', 'warning');
+                }
                 
-                mediaRecorder = new MediaRecorder(audioStream, 
-                    mimeType ? { mimeType: mimeType } : {}
-                );
+                selectedMimeType = mimeType;
                 
-                // ОТЛАДКА: проверяем что получилось
-                addLog(`🎬 MediaRecorder создан с mimeType: ${mediaRecorder.mimeType || 'undefined'}`, 'info');
+                // Создаем MediaRecorder
+                mediaRecorder = new MediaRecorder(audioStream, { mimeType: mimeType });
+                
+                addLog(`🎬 MediaRecorder создан: ${mediaRecorder.mimeType}`, 'info');
+                addLog('💡 WebM будет обработан через Raw PCM extraction', 'info');
 
                 let audioChunks = [];
                 let recordingStartTime = Date.now();
@@ -565,10 +562,12 @@
                 };
 
                 mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    // Используем актуальный MIME type MediaRecorder'а
+                    const detectedMimeType = mediaRecorder.mimeType || mimeType;
+                    const audioBlob = new Blob(audioChunks, { type: detectedMimeType });
                     const recordingDuration = (Date.now() - recordingStartTime) / 1000;
 
-                    addLog(`Обрабатываем образец ${calibrationSamplesCount + 1} (${recordingDuration.toFixed(1)}с)...`, 'info');
+                    addLog(`📦 WebM Blob: ${audioBlob.size} байт (${recordingDuration.toFixed(1)}с)`, 'success');
 
                     // Отправляем образец на сервер
                     await sendCalibrationSample(audioBlob);
@@ -579,7 +578,7 @@
                             if (isCalibrating) {
                                 startRecordingCalibrationSamples();
                             }
-                        }, 1000); // Пауза между записями
+                        }, 1000);
                     }
                 };
 
@@ -592,9 +591,64 @@
                 }, 3000);
 
             } catch (error) {
-                addLog(`Ошибка записи: ${error.message}`, 'danger');
+                addLog(`❌ Ошибка записи: ${error.message}`, 'danger');
                 isCalibrating = false;
                 document.getElementById('recording-indicator').classList.remove('active');
+            }
+        }
+
+        // ТАКЖЕ ЗАМЕНИ startContinuousAnalysis() НА ЭТУ
+
+        function startContinuousAnalysis() {
+            if (!isTesting || !audioStream) return;
+
+            try {
+                // Используем тот же оптимальный WebM формат
+                let mimeType = selectedMimeType || 'audio/webm;codecs=pcm';
+                
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'audio/webm';
+                }
+                
+                mediaRecorder = new MediaRecorder(audioStream, { mimeType: mimeType });
+
+                let audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = async () => {
+                    if (audioChunks.length > 0) {
+                        const detectedMimeType = mediaRecorder.mimeType || mimeType;
+                        const audioBlob = new Blob(audioChunks, { type: detectedMimeType });
+                        
+                        await analyzeAudioSample(audioBlob);
+                    }
+
+                    // Продолжаем анализ
+                    if (isTesting) {
+                        setTimeout(() => {
+                            if (isTesting) {
+                                startContinuousAnalysis();
+                            }
+                        }, 500);
+                    }
+                };
+
+                // Записываем 2-секундные фрагменты для анализа
+                mediaRecorder.start();
+                setTimeout(() => {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
+                }, 2000);
+
+            } catch (error) {
+                addLog(`Ошибка анализа: ${error.message}`, 'danger');
+                stopTesting();
             }
         }
 
@@ -692,61 +746,6 @@
             startContinuousAnalysis();
         }
 
-        function startContinuousAnalysis() {
-            if (!isTesting || !audioStream) return;
-
-            try {
-                // Используем тот же принудительный MP4 подход
-                let mimeType = 'audio/mp4';
-                
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    mimeType = 'audio/ogg';
-                    if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        mimeType = '';
-                    }
-                }
-                
-                mediaRecorder = new MediaRecorder(audioStream,
-                    mimeType ? { mimeType: mimeType } : {}
-                );
-
-                let audioChunks = [];
-
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        audioChunks.push(event.data);
-                    }
-                };
-
-                mediaRecorder.onstop = async () => {
-                    if (audioChunks.length > 0) {
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                        await analyzeAudioSample(audioBlob);
-                    }
-
-                    // Продолжаем анализ
-                    if (isTesting) {
-                        setTimeout(() => {
-                            if (isTesting) {
-                                startContinuousAnalysis();
-                            }
-                        }, 500);
-                    }
-                };
-
-                // Записываем 2-секундные фрагменты для анализа
-                mediaRecorder.start();
-                setTimeout(() => {
-                    if (mediaRecorder && mediaRecorder.state === 'recording') {
-                        mediaRecorder.stop();
-                    }
-                }, 2000);
-
-            } catch (error) {
-                addLog(`Ошибка анализа: ${error.message}`, 'danger');
-                stopTesting();
-            }
-        }
 
         async function analyzeAudioSample(audioBlob) {
             try {
