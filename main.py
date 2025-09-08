@@ -38,6 +38,8 @@ from roles import (
 # ИИ агенты
 from ai_agents import HRAssistant, TagsGenerator, HeadApproval, QuestionsGenerator
 
+from proctoring.audio_proctoring import get_audio_proctor
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -2812,6 +2814,132 @@ async def get_proctoring_stats(request: Request):
     except Exception as e:
         logger.error(f"❌ Ошибка получения статистики прокторинга: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
+    
+    
+    
+# === ТЕСТИРОВАНИЕ АУДИО ПРОКТОРИНГА ===
+
+@app.get("/test-audio", response_class=HTMLResponse)
+async def test_audio_page(request: Request):
+    """Страница тестирования аудио прокторинга"""
+    user = request.session.get("user")
+    if not user:
+        return RedirectResponse(url="/login")
+    
+    return templates.TemplateResponse("test_audio_proctoring.html", {
+        "request": request,
+        "user": user
+    })
+
+@app.post("/api/audio/start-calibration")
+async def start_audio_calibration(request: Request):
+    """Запуск калибровки голоса"""
+    try:
+        data = await request.json()
+        session_id = data.get('session_id', f'test_{int(datetime.now().timestamp())}')
+        
+        # Получаем систему прокторинга
+        audio_system = await get_audio_proctor(DATA_DIR)
+        
+        # Запускаем калибровку
+        result = await audio_system.start_calibration(session_id)
+        
+        return JSONResponse(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка запуска калибровки: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+
+@app.post("/api/audio/add-sample")
+async def add_calibration_sample(request: Request):
+    """Добавление образца для калибровки"""
+    try:
+        form = await request.form()
+        session_id = form.get('session_id')
+        audio_file = form.get('audio_data')
+        
+        if not audio_file or not session_id:
+            return JSONResponse({"success": False, "error": "Нет аудио данных или session_id"})
+        
+        # Читаем аудио данные
+        audio_bytes = await audio_file.read()
+        
+        # Получаем систему прокторинга
+        audio_system = await get_audio_proctor(DATA_DIR)
+        
+        # Добавляем образец
+        result = await audio_system.add_calibration_sample(session_id, audio_bytes)
+        
+        return JSONResponse(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка добавления образца: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+
+@app.post("/api/audio/finish-calibration")
+async def finish_audio_calibration(request: Request):
+    """Завершение калибровки"""
+    try:
+        data = await request.json()
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return JSONResponse({"success": False, "error": "Нет session_id"})
+        
+        # Получаем систему прокторинга
+        audio_system = await get_audio_proctor(DATA_DIR)
+        
+        # Завершаем калибровку
+        result = await audio_system.finish_calibration(session_id)
+        
+        return JSONResponse(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка завершения калибровки: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+
+@app.post("/api/audio/analyze")
+async def analyze_audio(request: Request):
+    """Анализ речи в реальном времени"""
+    try:
+        form = await request.form()
+        session_id = form.get('session_id')
+        audio_file = form.get('audio_data')
+        
+        if not audio_file or not session_id:
+            return JSONResponse({"success": False, "error": "Нет аудио данных или session_id"})
+        
+        # Читаем аудио данные
+        audio_bytes = await audio_file.read()
+        
+        # Получаем систему прокторинга
+        audio_system = await get_audio_proctor(DATA_DIR)
+        
+        # Анализируем речь
+        result = await audio_system.analyze_speech(session_id, audio_bytes)
+        
+        return JSONResponse(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка анализа речи: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+
+@app.get("/api/audio/session-logs/{session_id}")
+async def get_audio_session_logs(session_id: str, request: Request):
+    """Получение логов аудио сессии"""
+    try:
+        # Получаем систему прокторинга
+        audio_system = await get_audio_proctor(DATA_DIR)
+        
+        # Получаем логи
+        result = await audio_system.get_session_logs(session_id)
+        
+        return JSONResponse(result)
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения логов: {e}")
+        return JSONResponse({"success": False, "error": str(e)})
+
 
 # === ЗАПУСК СЕРВЕРА ===
 

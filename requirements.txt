@@ -26,3 +26,12 @@ APScheduler==3.10.4
 
 # Работа с датами
 python-dateutil==2.8.2
+
+# # Сначала основные библиотеки
+# pip install librosa soundfile scipy numpy
+
+# # Whisper (OpenAI)
+# pip install openai-whisper
+
+# # PyTorch облегченную версию
+# pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
